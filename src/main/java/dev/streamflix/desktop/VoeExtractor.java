@@ -63,7 +63,25 @@ final class VoeExtractor implements Extractor {
 
     private static String findApplicationJson(String html) {
         Matcher m = Pattern.compile("<script[^>]*type=[\"']application/json[\"'][^>]*>(.*?)</script>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(html);
-        return m.find() ? m.group(1) : null;
+        while (m.find()) {
+            String raw = m.group(1) == null ? "" : m.group(1).trim();
+            if (raw.isBlank()) continue;
+            if (raw.startsWith("[")) {
+                List<Object> values = Json.array(Json.parse(raw));
+                if (!values.isEmpty()) {
+                    String value = Json.string(values.get(0));
+                    if (!value.isBlank()) return value;
+                }
+                continue;
+            }
+            if (raw.startsWith("\"")) {
+                String value = Json.string(Json.parse(raw));
+                if (!value.isBlank()) return value;
+            } else {
+                return raw;
+            }
+        }
+        return null;
     }
 
     static String decryptF7(String input) {

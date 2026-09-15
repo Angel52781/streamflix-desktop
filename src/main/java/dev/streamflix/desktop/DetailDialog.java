@@ -200,7 +200,9 @@ final class DetailDialog extends JDialog {
                         return;
                     }
                     Models.Server selected = selectServer(servers);
-                    if (selected != null) resolveAndPlay(selected, mediaTitle);
+                    if (selected == null) return;
+                    if ("__auto__".equals(selected.id())) resolveAnyAndPlay(servers, mediaTitle);
+                    else resolveAndPlay(selected, mediaTitle);
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     status.setText("Error obteniendo servidores");
@@ -211,14 +213,49 @@ final class DetailDialog extends JDialog {
     }
 
     private Models.Server selectServer(List<Models.Server> servers) {
-        String[] labels = servers.stream().map(Models.Server::name).toArray(String[]::new);
+        String automatic = "Automático (probar servidores compatibles)";
+        String[] labels = new String[servers.size() + 1];
+        labels[0] = automatic;
+        for (int i = 0; i < servers.size(); i++) labels[i + 1] = servers.get(i).name();
         String selected = (String) JOptionPane.showInputDialog(
                 this, "Selecciona un servidor:", "Servidor",
                 JOptionPane.PLAIN_MESSAGE, null, labels, labels[0]
         );
         if (selected == null) return null;
-        for (int i = 0; i < labels.length; i++) if (Objects.equals(labels[i], selected)) return servers.get(i);
+        if (Objects.equals(selected, automatic)) return new Models.Server("__auto__", automatic, "");
+        for (int i = 0; i < servers.size(); i++) if (Objects.equals(servers.get(i).name(), selected)) return servers.get(i);
         return null;
+    }
+
+    private record ResolvedMedia(Models.Server server, Models.Video video) {}
+
+    private void resolveAnyAndPlay(List<Models.Server> servers, String mediaTitle) {
+        status.setText("Buscando un servidor compatible…");
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        new SwingWorker<ResolvedMedia, Void>() {
+            @Override protected ResolvedMedia doInBackground() throws Exception {
+                Exception last = null;
+                for (Models.Server server : servers) {
+                    try {
+                        Models.Video video = extractors.resolve(server);
+                        if (video.source() != null && !video.source().isBlank()) return new ResolvedMedia(server, video);
+                    } catch (Exception ex) { last = ex; }
+                }
+                throw new IllegalStateException("Ningún servidor disponible pudo resolverse.", last);
+            }
+            @Override protected void done() {
+                setCursor(Cursor.getDefaultCursor());
+                try {
+                    ResolvedMedia resolved = get();
+                    MpvPlayer.play(resolved.video(), mediaTitle);
+                    status.setText("Reproduciendo ÷ " + resolved.server().name());
+                } catch (Exception ex) {
+                    Throwable cause = ex instanceof ExecutionException && ex.getCause() != null ? ex.getCause() : ex;
+                    status.setText("No se pudo reproducir");
+                    showError("No se encontró un servidor compatible", cause);
+                }
+            }
+        }.execute();
     }
 
     private void resolveAndPlay(Models.Server server, String mediaTitle) {

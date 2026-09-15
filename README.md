@@ -1,8 +1,8 @@
-# Streamflix Desktop (Windows proof of concept)
+# Streamflix Desktop for Windows
 
 A Windows-oriented desktop port of the Streamflix Reborn architecture. The goal is functional parity with the Android app while replacing Android-only UI/player components with desktop equivalents.
 
-## Current MVP
+## Current release
 
 Implemented:
 
@@ -11,11 +11,11 @@ Implemented:
 - Search
 - Series seasons/episodes
 - Server discovery
-- Direct HLS/MP4 playback through mpv
-- Filemoon extraction ported to pure Java/JVM
+- Direct HLS/MP4 playback through bundled mpv
+- Native extraction for Filemoon, VOE, Streamtape, DoodStream and Goodstream
 - HTTP headers/cookies passed to mpv when required
-- Unsupported-server fallback that opens the embed URL in the system browser
-- Java 21 build with no third-party Java dependencies
+- Automatic server fallback plus browser fallback for unsupported hosts
+- Java 17-compatible build with a bundled runtime in the Windows app image
 - Windows `jpackage` app-image build script
 
 Not yet at Android parity:

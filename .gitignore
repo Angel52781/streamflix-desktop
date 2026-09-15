@@ -4,3 +4,7 @@ dist/
 *.iml
 .DS_Store
 *.log
+tools/mpv/*
+!tools/mpv/.gitkeep
+
+dist-test/

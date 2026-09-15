@@ -9,7 +9,9 @@ final class ExtractorRegistry {
             new DirectExtractor(),
             new FilemoonExtractor(),
             new VoeExtractor(),
-            new StreamtapeExtractor()
+            new StreamtapeExtractor(),
+            new DoodStreamExtractor(),
+            new GoodstreamExtractor()
     );
 
     Models.Video resolve(Models.Server server) throws Exception {
@@ -17,7 +19,7 @@ final class ExtractorRegistry {
         for (Extractor extractor : extractors) {
             if (extractor.supports(url)) return extractor.extract(url);
         }
-        throw new UnsupportedOperationException("Extractor aún no portado para: " + host(url));
+        throw new UnsupportedOperationException("Extractor aÃƒÂºn no portado para: " + host(url));
     }
 
     static void openFallback(Models.Server server) throws Exception {

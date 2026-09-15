@@ -122,7 +122,7 @@ final class FilemoonExtractor implements Extractor {
         Map<String, Object> payload = Json.object(Json.parse(decrypted));
         List<Object> sources = Json.array(payload.get("sources"));
         if (sources.isEmpty()) throw new IllegalStateException("Filemoon returned no sources");
-        String source = Json.string(Json.object(sources.getFirst()).get("url"));
+        String source = Json.string(Json.object(sources.get(0)).get("url"));
         if (source.isBlank()) throw new IllegalStateException("Filemoon source URL missing");
 
         return new Models.Video(source, Map.of(
