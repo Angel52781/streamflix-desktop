@@ -8,3 +8,4 @@ tools/mpv/*
 !tools/mpv/.gitkeep
 
 dist-test/
+release/
