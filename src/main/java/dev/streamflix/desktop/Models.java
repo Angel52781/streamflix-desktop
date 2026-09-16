@@ -10,7 +10,7 @@ final class Models {
 
     record ShowItem(
             String id,
-            int providerId,
+            String providerId,
             String title,
             String overview,
             String released,
@@ -22,7 +22,7 @@ final class Models {
     ) {}
 
     record Episode(
-            int id,
+            String id,
             int seasonNumber,
             int episodeNumber,
             String title,

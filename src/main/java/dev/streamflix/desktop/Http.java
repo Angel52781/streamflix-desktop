@@ -30,21 +30,39 @@ final class Http {
     }
 
     byte[] getBytes(String url) throws IOException, InterruptedException {
-        HttpRequest req = withHeaders(HttpRequest.newBuilder(URI.create(url)).GET(), Map.of()).build();
+        return getBytes(url, Map.of());
+    }
+
+    byte[] getBytes(String url, Map<String, String> headers) throws IOException, InterruptedException {
+        HttpRequest req = withHeaders(HttpRequest.newBuilder(URI.create(url)).GET(), headers).build();
         HttpResponse<byte[]> res = client.send(req, HttpResponse.BodyHandlers.ofByteArray());
         ensureSuccess(res.statusCode(), url);
         return res.body();
     }
 
+    byte[] getBytesLegacy(String url, Map<String, String> headers) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
+        connection.setInstanceFollowRedirects(true);
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(20000);
+        connection.setRequestProperty("User-Agent", headers.getOrDefault("User-Agent", USER_AGENT));
+        headers.forEach(connection::setRequestProperty);
+        int status = connection.getResponseCode();
+        ensureSuccess(status, url);
+        try (var in = connection.getInputStream()) { return in.readAllBytes(); }
+        finally { connection.disconnect(); }
+    }
     String postEmpty(String url, Map<String, String> headers) throws IOException, InterruptedException {
         return request(HttpRequest.newBuilder(URI.create(url)).POST(HttpRequest.BodyPublishers.noBody()), headers);
     }
 
     URI finalUri(String url, Map<String, String> headers) throws IOException, InterruptedException {
         HttpRequest req = withHeaders(HttpRequest.newBuilder(URI.create(url)).GET(), headers).build();
-        HttpResponse<Void> res = client.send(req, HttpResponse.BodyHandlers.discarding());
-        ensureSuccess(res.statusCode(), url);
-        return res.uri();
+        HttpResponse<java.io.InputStream> res = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+        try (java.io.InputStream ignored = res.body()) {
+            ensureSuccess(res.statusCode(), url);
+            return res.uri();
+        }
     }
 
     String postJson(String url, String json, Map<String, String> headers) throws IOException, InterruptedException {

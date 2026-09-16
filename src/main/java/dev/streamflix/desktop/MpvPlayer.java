@@ -57,10 +57,20 @@ final class MpvPlayer {
 
     private static void addHeaders(List<String> cmd, Models.Video video) {
         if (video.headers() == null || video.headers().isEmpty()) return;
-        String headers = video.headers().entrySet().stream()
-                .map(e -> e.getKey() + ": " + e.getValue().replace(",", "\\,"))
-                .reduce((a, b) -> a + "," + b).orElse("");
-        if (!headers.isBlank()) cmd.add("--http-header-fields=" + headers);
+        ArrayList<String> extra = new ArrayList<>();
+        for (var entry : video.headers().entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key.equalsIgnoreCase("User-Agent")) {
+                cmd.add("--user-agent=" + value);
+            } else if (key.equalsIgnoreCase("Referer") || key.equalsIgnoreCase("Referrer")) {
+                if (value.matches("https?://[^/]+")) value += "/";
+                cmd.add("--referrer=" + value);
+            } else {
+                extra.add(key + ": " + value.replace(",", "\\,"));
+            }
+        }
+        if (!extra.isEmpty()) cmd.add("--http-header-fields=" + String.join(",", extra));
     }
 
     private static String requireMpv() {

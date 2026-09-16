@@ -9,10 +9,12 @@ import java.util.List;
 final class MainFrame extends JFrame {
     private enum Mode { MOVIES, SERIES, SEARCH }
 
-    private final Provider provider;
+    private final List<Provider> providers;
+    private Provider provider;
+    private final JComboBox<String> providerBox = new JComboBox<>();
     private final JPanel grid = new JPanel();
     private final JLabel status = Theme.muted("Listo");
-    private final JTextField search = new JTextField(24);
+    private final JTextField search = new JTextField(22);
     private final JButton moviesButton = Theme.button("Películas");
     private final JButton seriesButton = Theme.button("Series");
     private final JButton prevButton = Theme.button("‹");
@@ -23,9 +25,15 @@ final class MainFrame extends JFrame {
     private String query = "";
     private SwingWorker<List<Models.ShowItem>, Void> activeWorker;
 
-    MainFrame(Provider provider) {
+    MainFrame(List<Provider> providers) {
         super("Streamflix Desktop");
-        this.provider = provider;
+        if (providers == null || providers.isEmpty()) {
+            throw new IllegalArgumentException("Sin providers configurados");
+        }
+        this.providers = List.copyOf(providers);
+        this.provider = this.providers.get(0);
+        for (Provider item : this.providers) providerBox.addItem(item.name());
+
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(980, 680));
         setSize(1280, 820);
@@ -36,11 +44,10 @@ final class MainFrame extends JFrame {
         add(buildHeader(), BorderLayout.NORTH);
         add(buildContent(), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
-
         addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent e) { rebuildGridColumns(); }
         });
-
+        normalizeModeForProvider();
         loadPage();
     }
 
@@ -56,6 +63,10 @@ final class MainFrame extends JFrame {
 
         JPanel nav = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         nav.setOpaque(false);
+        nav.add(Theme.muted("Fuente:"));
+        providerBox.setToolTipText("Proveedor de contenido");
+        providerBox.addActionListener(e -> switchProvider(providerBox.getSelectedIndex()));
+        nav.add(providerBox);
         moviesButton.addActionListener(e -> switchMode(Mode.MOVIES));
         seriesButton.addActionListener(e -> switchMode(Mode.SERIES));
         nav.add(moviesButton);
@@ -64,7 +75,7 @@ final class MainFrame extends JFrame {
 
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         right.setOpaque(false);
-        search.setToolTipText("Buscar películas y series");
+        search.setToolTipText("Buscar en el proveedor actual");
         search.addActionListener(e -> runSearch());
         JButton searchButton = Theme.button("Buscar");
         searchButton.addActionListener(e -> runSearch());
@@ -78,7 +89,6 @@ final class MainFrame extends JFrame {
         grid.setBackground(Theme.BG);
         grid.setBorder(new EmptyBorder(18, 18, 18, 18));
         rebuildGridColumns();
-
         JScrollPane scroll = new JScrollPane(grid);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(22);
@@ -93,7 +103,9 @@ final class MainFrame extends JFrame {
 
         JPanel pager = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         pager.setOpaque(false);
-        prevButton.addActionListener(e -> { if (page > 1) { page--; loadPage(); } });
+        prevButton.addActionListener(e -> {
+            if (page > 1) { page--; loadPage(); }
+        });
         nextButton.addActionListener(e -> { page++; loadPage(); });
         pager.add(prevButton);
         pageLabel.setPreferredSize(new Dimension(36, 30));
@@ -104,7 +116,30 @@ final class MainFrame extends JFrame {
         return footer;
     }
 
+    private void switchProvider(int index) {
+        if (index < 0 || index >= providers.size()) return;
+        Provider selected = providers.get(index);
+        if (selected == provider) return;
+        if (activeWorker != null && !activeWorker.isDone()) activeWorker.cancel(true);
+        provider = selected;
+        page = 1;
+        query = "";
+        search.setText("");
+        mode = provider.supportsMovies() ? Mode.MOVIES : Mode.SERIES;
+        normalizeModeForProvider();
+        loadPage();
+    }
+
+    private void normalizeModeForProvider() {
+        if (mode == Mode.MOVIES && !provider.supportsMovies()) mode = Mode.SERIES;
+        if (mode == Mode.SERIES && !provider.supportsTvShows()) mode = Mode.MOVIES;
+        moviesButton.setEnabled(provider.supportsMovies());
+        seriesButton.setEnabled(provider.supportsTvShows());
+    }
+
     private void switchMode(Mode newMode) {
+        if (newMode == Mode.MOVIES && !provider.supportsMovies()) return;
+        if (newMode == Mode.SERIES && !provider.supportsTvShows()) return;
         mode = newMode;
         page = 1;
         query = "";
@@ -123,21 +158,30 @@ final class MainFrame extends JFrame {
 
     private void loadPage() {
         if (activeWorker != null && !activeWorker.isDone()) activeWorker.cancel(true);
-        setBusy(true, mode == Mode.SEARCH ? "Buscando “" + query + "”…" : "Cargando " + labelForMode() + "…");
-        pageLabel.setText(String.valueOf(page));
-        prevButton.setEnabled(page > 1);
+        Provider requestProvider = provider;
+        Mode requestMode = mode;
+        int requestPage = page;
+        String requestQuery = query;
+
+        String action = requestMode == Mode.SEARCH
+                ? "Buscando “" + requestQuery + "”…"
+                : "Cargando " + labelForMode(requestMode) + "…";
+        setBusy(true, action);
+        pageLabel.setText(String.valueOf(requestPage));
+        prevButton.setEnabled(requestPage > 1);
         grid.removeAll();
-        JLabel loading = Theme.muted("Cargando desde " + provider.name() + "…");
+        JLabel loading = Theme.muted("Cargando desde " + requestProvider.name() + "…");
         loading.setFont(loading.getFont().deriveFont(16f));
         grid.add(loading);
-        grid.revalidate(); grid.repaint();
+        grid.revalidate();
+        grid.repaint();
 
         activeWorker = new SwingWorker<>() {
             @Override protected List<Models.ShowItem> doInBackground() throws Exception {
-                return switch (mode) {
-                    case MOVIES -> provider.movies(page);
-                    case SERIES -> provider.tvShows(page);
-                    case SEARCH -> provider.search(query, page);
+                return switch (requestMode) {
+                    case MOVIES -> requestProvider.movies(requestPage);
+                    case SERIES -> requestProvider.tvShows(requestPage);
+                    case SEARCH -> requestProvider.search(requestQuery, requestPage);
                 };
             }
 
@@ -146,12 +190,15 @@ final class MainFrame extends JFrame {
                 try {
                     List<Models.ShowItem> items = get();
                     render(items);
-                    setBusy(false, items.isEmpty() ? "Sin resultados" : items.size() + " resultados · " + provider.name());
+                    String text = items.isEmpty()
+                            ? "Sin resultados · " + requestProvider.name()
+                            : items.size() + " resultados · " + requestProvider.name();
+                    setBusy(false, text);
                     nextButton.setEnabled(!items.isEmpty());
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     renderError(cause);
-                    setBusy(false, "Error de conexión");
+                    setBusy(false, "Error de conexión · " + requestProvider.name());
                     nextButton.setEnabled(false);
                 }
             }
@@ -183,12 +230,18 @@ final class MainFrame extends JFrame {
         JLabel title = new JLabel("No se pudo cargar el catálogo");
         title.setForeground(Theme.TEXT);
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
+
         JLabel message = Theme.muted(error.getMessage() == null ? error.toString() : error.getMessage());
         JButton retry = Theme.button("Reintentar");
         retry.addActionListener(e -> loadPage());
-        panel.add(title); panel.add(Box.createVerticalStrut(8)); panel.add(message); panel.add(Box.createVerticalStrut(14)); panel.add(retry);
+        panel.add(title);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(message);
+        panel.add(Box.createVerticalStrut(14));
+        panel.add(retry);
         grid.add(panel);
-        grid.revalidate(); grid.repaint();
+        grid.revalidate();
+        grid.repaint();
     }
 
     private void openDetails(Models.ShowItem item) {
@@ -201,8 +254,8 @@ final class MainFrame extends JFrame {
         grid.setLayout(new GridLayout(0, columns, 14, 14));
     }
 
-    private String labelForMode() {
-        return switch (mode) {
+    private String labelForMode(Mode value) {
+        return switch (value) {
             case MOVIES -> "películas";
             case SERIES -> "series";
             case SEARCH -> "resultados";
@@ -211,8 +264,11 @@ final class MainFrame extends JFrame {
 
     private void setBusy(boolean busy, String text) {
         status.setText(text);
-        moviesButton.setEnabled(!busy);
-        seriesButton.setEnabled(!busy);
+        moviesButton.setEnabled(!busy && provider.supportsMovies());
+        seriesButton.setEnabled(!busy && provider.supportsTvShows());
         search.setEnabled(!busy);
+        providerBox.setEnabled(!busy);
+        prevButton.setEnabled(!busy && page > 1);
+        if (busy) nextButton.setEnabled(false);
     }
 }

@@ -52,7 +52,7 @@ final class FanpelisProvider implements Provider {
             Integer ep = Json.integer(item.get("episode_number"));
             if (id == null || season == null || ep == null) continue;
             out.add(new Models.Episode(
-                    id, season, ep,
+                    String.valueOf(id), season, ep,
                     Json.string(item.get("title")),
                     optional(item.get("overview")),
                     image(optional(item.get("still_path")))
@@ -62,7 +62,7 @@ final class FanpelisProvider implements Provider {
         return out;
     }
 
-    @Override public List<Models.Server> servers(int providerItemId) throws Exception {
+    @Override public List<Models.Server> servers(String providerItemId) throws Exception {
         String url = API + "player?post_id=" + providerItemId + "&_any=1";
         Map<String, Object> root = Json.object(Json.parse(http.get(url)));
         Map<String, Object> data = Json.object(root.get("data"));
@@ -101,7 +101,7 @@ final class FanpelisProvider implements Provider {
         Integer runtime = Json.integer(item.get("runtime"));
         return new Models.ShowItem(
                 slug.isBlank() ? String.valueOf(providerId) : slug,
-                providerId,
+                String.valueOf(providerId),
                 title.isBlank() ? "Sin título" : title,
                 optional(item.get("overview")),
                 optional(item.get("release_date")),

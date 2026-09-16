@@ -12,7 +12,7 @@ public final class App {
         System.setProperty("sun.awt.noerasebackground", "true");
         Theme.install();
         SwingUtilities.invokeLater(() -> {
-            MainFrame frame = new MainFrame(new FanpelisProvider());
+            MainFrame frame = new MainFrame(ProviderRegistry.all());
             frame.setVisible(true);
         });
     }

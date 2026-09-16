@@ -185,7 +185,7 @@ final class DetailDialog extends JDialog {
         episodeArea.revalidate(); episodeArea.repaint();
     }
 
-    private void chooseServerAndPlay(int providerItemId, String mediaTitle) {
+    private void chooseServerAndPlay(String providerItemId, String mediaTitle) {
         status.setText("Buscando servidores…");
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         new SwingWorker<List<Models.Server>, Void>() {
@@ -248,7 +248,7 @@ final class DetailDialog extends JDialog {
                 try {
                     ResolvedMedia resolved = get();
                     MpvPlayer.play(resolved.video(), mediaTitle);
-                    status.setText("Reproduciendo ÷ " + resolved.server().name());
+                    status.setText("Reproduciendo · " + resolved.server().name());
                 } catch (Exception ex) {
                     Throwable cause = ex instanceof ExecutionException && ex.getCause() != null ? ex.getCause() : ex;
                     status.setText("No se pudo reproducir");
@@ -268,7 +268,7 @@ final class DetailDialog extends JDialog {
                 try {
                     Models.Video video = get();
                     MpvPlayer.play(video, mediaTitle);
-                    status.setText("Reproduciendo en mpv");
+                    status.setText("Reproduciendo · " + server.name());
                 } catch (ExecutionException ex) {
                     Throwable cause = ex.getCause();
                     if (cause instanceof UnsupportedOperationException) {

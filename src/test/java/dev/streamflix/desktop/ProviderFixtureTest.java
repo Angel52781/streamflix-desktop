@@ -14,7 +14,7 @@ public final class ProviderFixtureTest {
         require(items.size() == 2, "count");
         require(items.get(0).type() == Models.ShowType.MOVIE, "movie type");
         require(items.get(1).type() == Models.ShowType.TV_SHOW, "series type");
-        require(items.get(0).providerId() == 101, "provider id");
+        require(items.get(0).providerId().equals("101"), "provider id");
         require(items.get(0).poster().contains("wp-content/uploads/2026/demo.jpg"), "poster path");
         System.out.println("ProviderFixtureTest OK");
     }
