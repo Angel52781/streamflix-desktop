@@ -24,7 +24,7 @@ final class ShowCard extends JPanel {
 
         JPanel meta = new JPanel(new BorderLayout(0,3));
         meta.setOpaque(false);
-        JLabel title = new JLabel(ellipsize(item.title(), 28));
+        JLabel title = new JLabel(item.title() == null ? "" : item.title());
         title.setFont(title.getFont().deriveFont(Font.BOLD, 13f));
         title.setToolTipText(item.title());
         meta.add(title, BorderLayout.NORTH);
@@ -41,10 +41,19 @@ final class ShowCard extends JPanel {
             @Override public void mouseExited(MouseEvent e) { setBackground(Theme.PANEL); repaint(); }
         };
         addMouseListener(click); poster.addMouseListener(click); meta.addMouseListener(click); title.addMouseListener(click);
+
+        setFocusable(true);
+        addFocusListener(new FocusAdapter() {
+            @Override public void focusGained(FocusEvent e) { setBackground(Theme.PANEL_ALT); repaint(); }
+            @Override public void focusLost(FocusEvent e) { setBackground(Theme.PANEL); repaint(); }
+        });
+        addKeyListener(new KeyAdapter() {
+            @Override public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER || e.getKeyCode() == KeyEvent.VK_SPACE) {
+                    onOpen.accept(item);
+                }
+            }
+        });
     }
 
-    private static String ellipsize(String value, int max) {
-        if (value == null) return "";
-        return value.length() <= max ? value : value.substring(0, max - 1) + "…";
-    }
 }

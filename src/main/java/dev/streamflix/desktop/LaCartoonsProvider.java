@@ -82,10 +82,11 @@ final class LaCartoonsProvider implements Provider {
     }
 
     private Document doc(String url) throws Exception {
-        return Jsoup.parse(http.get(url, Map.of(
+        byte[] bytes = http.getBytes(url, Map.of(
                 "Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Referer", ROOT + "/"
-        )), url);
+        ));
+        return Jsoup.parse(new java.io.ByteArrayInputStream(bytes), null, url);
     }
 
     private static String absolute(String value) {

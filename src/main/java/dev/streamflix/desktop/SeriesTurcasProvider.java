@@ -34,7 +34,8 @@ final class SeriesTurcasProvider implements Provider {
         );
     }
     private Document doc(String url) throws Exception {
-        return Jsoup.parse(http.get(url, headers(base() + "/")), url);
+        byte[] bytes = http.getBytes(url, headers(base() + "/"));
+        return Jsoup.parse(new java.io.ByteArrayInputStream(bytes), null, url);
     }
 
     @Override public List<Models.ShowItem> movies(int page) { return List.of(); }

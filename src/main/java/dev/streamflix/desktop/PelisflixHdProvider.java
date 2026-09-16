@@ -27,8 +27,8 @@ final class PelisflixHdProvider implements Provider {
     }
 
     private Document doc(String url) throws Exception {
-        String html = http.get(url, Map.of("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"));
-        return Jsoup.parse(html, url);
+        byte[] bytes = http.getBytes(url, Map.of("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"));
+        return Jsoup.parse(new java.io.ByteArrayInputStream(bytes), null, url);
     }
     @Override public List<Models.ShowItem> movies(int page) throws Exception {
         String url = page <= 1 ? base() + "/peliculas" : base() + "/peliculas/page/" + page;

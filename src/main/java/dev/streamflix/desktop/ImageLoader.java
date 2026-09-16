@@ -41,12 +41,12 @@ final class ImageLoader {
                 BufferedImage source = download(url);
                 Image scaled = fit(source, width, height);
                 return new ImageIcon(scaled);
-            } catch (Exception ex) {
+            } catch (Throwable ex) {
                 System.err.println("Image load failed: " + url + " :: " + ex.getMessage());
                 return null;
             }
-        }, POOL).thenAccept(icon -> SwingUtilities.invokeLater(() -> {
-            if (icon == null) {
+        }, POOL).whenComplete((icon, error) -> SwingUtilities.invokeLater(() -> {
+            if (icon == null || error != null) {
                 showFallback(label);
                 return;
             }

@@ -92,7 +92,8 @@ final class AnimeWorldProvider implements Provider {
     }
 
     private Document doc(String url) throws Exception {
-        return Jsoup.parse(http.get(url, headers()), url);
+        byte[] bytes = http.getBytes(url, headers());
+        return Jsoup.parse(new java.io.ByteArrayInputStream(bytes), null, url);
     }
 
     private static Map<String,String> headers() {

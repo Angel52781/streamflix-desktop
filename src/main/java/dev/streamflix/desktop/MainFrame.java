@@ -86,10 +86,15 @@ final class MainFrame extends JFrame {
     }
 
     private JComponent buildContent() {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setBackground(Theme.BG);
+        
         grid.setBackground(Theme.BG);
         grid.setBorder(new EmptyBorder(18, 18, 18, 18));
         rebuildGridColumns();
-        JScrollPane scroll = new JScrollPane(grid);
+        wrapper.add(grid, BorderLayout.NORTH);
+        
+        JScrollPane scroll = new JScrollPane(wrapper);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(22);
         return scroll;
@@ -116,12 +121,15 @@ final class MainFrame extends JFrame {
         return footer;
     }
 
-    private void switchProvider(int index) {
+    void switchProvider(int index) {
         if (index < 0 || index >= providers.size()) return;
         Provider selected = providers.get(index);
         if (selected == provider) return;
         if (activeWorker != null && !activeWorker.isDone()) activeWorker.cancel(true);
         provider = selected;
+        if (providerBox.getSelectedIndex() != index) {
+            providerBox.setSelectedIndex(index);
+        }
         page = 1;
         query = "";
         search.setText("");
@@ -133,8 +141,8 @@ final class MainFrame extends JFrame {
     private void normalizeModeForProvider() {
         if (mode == Mode.MOVIES && !provider.supportsMovies()) mode = Mode.SERIES;
         if (mode == Mode.SERIES && !provider.supportsTvShows()) mode = Mode.MOVIES;
-        moviesButton.setEnabled(provider.supportsMovies());
-        seriesButton.setEnabled(provider.supportsTvShows());
+        moviesButton.setVisible(provider.supportsMovies());
+        seriesButton.setVisible(provider.supportsTvShows());
     }
 
     private void switchMode(Mode newMode) {

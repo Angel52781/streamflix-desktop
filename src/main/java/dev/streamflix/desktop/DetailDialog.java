@@ -76,19 +76,31 @@ final class DetailDialog extends JDialog {
         info.add(overview);
         info.add(Box.createVerticalStrut(16));
 
+        JPanel infoWrapper = new JPanel(new BorderLayout(0, 16));
+        infoWrapper.setOpaque(false);
+        infoWrapper.add(info, BorderLayout.NORTH);
+
         if (item.type() == Models.ShowType.MOVIE) {
             JButton play = Theme.button("▶ Reproducir");
-            play.setAlignmentX(Component.LEFT_ALIGNMENT);
-            play.addActionListener(e -> chooseServerAndPlay(item.providerId(), item.title()));
-            info.add(play);
+            play.addActionListener(e -> chooseServerAndPlay(item.providerId(), item.title(), true));
+            
+            JButton selectServer = Theme.button("Servidores...");
+            selectServer.addActionListener(e -> chooseServerAndPlay(item.providerId(), item.title(), false));
+            
+            JPanel playWrapper = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+            playWrapper.setOpaque(false);
+            playWrapper.add(play);
+            playWrapper.add(Box.createHorizontalStrut(10));
+            playWrapper.add(selectServer);
+            infoWrapper.add(playWrapper, BorderLayout.CENTER);
         } else {
             episodeArea.setOpaque(false);
             JLabel loading = Theme.muted("Cargando episodios…");
             episodeArea.add(loading, BorderLayout.CENTER);
-            info.add(episodeArea);
+            infoWrapper.add(episodeArea, BorderLayout.CENTER);
         }
 
-        body.add(info, BorderLayout.CENTER);
+        body.add(infoWrapper, BorderLayout.CENTER);
         return new JScrollPane(body) {{
             setBorder(null);
             getVerticalScrollBar().setUnitIncrement(18);
@@ -175,17 +187,32 @@ final class DetailDialog extends JDialog {
         populate.run();
 
         episodeArea.add(new JScrollPane(list), BorderLayout.CENTER);
-        JButton playEpisode = Theme.button("▶ Reproducir episodio seleccionado");
+        
+        JButton playEpisode = Theme.button("▶ Reproducir episodio");
         playEpisode.addActionListener(e -> {
             Models.Episode ep = list.getSelectedValue();
             if (ep == null) return;
-            chooseServerAndPlay(ep.id(), item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber());
+            chooseServerAndPlay(ep.id(), item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(), true);
         });
-        episodeArea.add(playEpisode, BorderLayout.SOUTH);
+        
+        JButton selectServer = Theme.button("Servidores...");
+        selectServer.addActionListener(e -> {
+            Models.Episode ep = list.getSelectedValue();
+            if (ep == null) return;
+            chooseServerAndPlay(ep.id(), item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(), false);
+        });
+        
+        JPanel epButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        epButtons.setOpaque(false);
+        epButtons.add(playEpisode);
+        epButtons.add(Box.createHorizontalStrut(10));
+        epButtons.add(selectServer);
+        
+        episodeArea.add(epButtons, BorderLayout.SOUTH);
         episodeArea.revalidate(); episodeArea.repaint();
     }
 
-    private void chooseServerAndPlay(String providerItemId, String mediaTitle) {
+    private void chooseServerAndPlay(String providerItemId, String mediaTitle, boolean autoPlay) {
         status.setText("Buscando servidores…");
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         new SwingWorker<List<Models.Server>, Void>() {
@@ -199,7 +226,14 @@ final class DetailDialog extends JDialog {
                         JOptionPane.showMessageDialog(DetailDialog.this, "El provider no devolvió servidores para este contenido.", "Sin servidores", JOptionPane.WARNING_MESSAGE);
                         return;
                     }
-                    Models.Server selected = selectServer(servers);
+                    Models.Server selected;
+                    if (autoPlay) {
+                        resolveAnyAndPlay(servers, mediaTitle);
+                        return;
+                    } else {
+                        selected = selectServer(servers);
+                    }
+                    
                     if (selected == null) return;
                     if ("__auto__".equals(selected.id())) resolveAnyAndPlay(servers, mediaTitle);
                     else resolveAndPlay(selected, mediaTitle);
