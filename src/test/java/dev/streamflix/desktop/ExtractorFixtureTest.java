@@ -19,6 +19,11 @@ public final class ExtractorFixtureTest {
         require(new FilemoonExtractor().supports("https://filemoon.sx/e/abc123"), "filemoon host");
         require(new StreamtapeExtractor().supports("https://streamtape.com/e/abc"), "streamtape host");
         require(new VoeExtractor().supports("https://voe.sx/e/abc"), "voe host");
+        require(new SaturnExtractor().supports("https://play.saturncdn.net/embed/123"), "saturn host");
+        require(new VixcloudExtractor().supports("https://vixcloud.co/embed/123"), "vixcloud host");
+        String saturnDec = SaturnExtractor.decodePayload(Base64.getEncoder().encodeToString(
+                new byte[] { (byte) ('h' ^ 'a'), (byte) ('t' ^ 's'), (byte) ('t' ^ 'a'), (byte) ('p' ^ 's') }), "as");
+        require("http".equals(saturnDec), "saturn decode");
         System.out.println("ExtractorFixtureTest OK");
     }
 

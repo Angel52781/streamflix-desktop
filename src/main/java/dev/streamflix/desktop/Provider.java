@@ -3,6 +3,7 @@ package dev.streamflix.desktop;
 import java.util.List;
 
 interface Provider {
+    default String id() { return name().toLowerCase().replace(" ", "-"); }
     String name();
     default boolean supportsMovies() { return true; }
     default boolean supportsTvShows() { return true; }

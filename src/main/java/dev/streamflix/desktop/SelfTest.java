@@ -13,7 +13,10 @@ final class SelfTest {
             "PelisflixHD", "Hugo",
             "AnimeWorld", "Dark",
             "Series Turcas", "Taht",
-            "La Cartoons", "Perros"
+            "La Cartoons", "Perros",
+            "AnimeSaturn", "Solo",
+            "AnimeUnity", "Mou",
+            "MEGAKino", "Trockenzeit"
     );
 
     private SelfTest() {}

@@ -8,6 +8,8 @@ final class ExtractorRegistry {
     private static final int MAX_DELEGATION_DEPTH = 4;
     private final List<Extractor> extractors = List.of(
             new DirectExtractor(),
+            new SaturnExtractor(),
+            new VixcloudExtractor(),
             new VoeExtractor(),
             new DoodStreamExtractor(),
             new FilemoonExtractor(),

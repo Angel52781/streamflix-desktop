@@ -12,7 +12,10 @@ final class ProviderRegistry {
                 new PelisflixHdProvider(),
                 new AnimeWorldProvider(),
                 new SeriesTurcasProvider(),
-                new LaCartoonsProvider()
+                new LaCartoonsProvider(),
+                new AnimeSaturnProvider(),
+                new AnimeUnityProvider(),
+                new MegaKinoProvider()
         );
     }
 }

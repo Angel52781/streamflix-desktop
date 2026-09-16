@@ -72,6 +72,18 @@ final class Http {
         return request(builder, headers);
     }
 
+    String postForm(String url, Map<String, String> form, Map<String, String> headers) throws IOException, InterruptedException {
+        StringBuilder sb = new StringBuilder();
+        for (var entry : form.entrySet()) {
+            if (!sb.isEmpty()) sb.append("&");
+            sb.append(encode(entry.getKey())).append("=").append(encode(entry.getValue()));
+        }
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                .POST(HttpRequest.BodyPublishers.ofString(sb.toString(), StandardCharsets.UTF_8))
+                .header("Content-Type", "application/x-www-form-urlencoded");
+        return request(builder, headers);
+    }
+
     private String request(HttpRequest.Builder builder, Map<String, String> headers) throws IOException, InterruptedException {
         HttpRequest req = withHeaders(builder, headers).build();
         HttpResponse<String> res = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));

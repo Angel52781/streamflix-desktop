@@ -42,3 +42,25 @@ Not validated here:
 - Live series episode playback path validated through mpv.
 - Bundled Java runtime and bundled mpv verified in the packaged app image.
 - Normal GUI launch remained running after startup smoke test.
+
+## International providers expansion (agent/providers-intl)
+
+Added and live-validated 3 international providers ported from upstream:
+
+1. **AnimeSaturn (IT)**:
+   - TV Show catalog, search, episode list, server discovery.
+   - Dedicated `SaturnExtractor` (pure JVM XOR decryption against embed token).
+   - Real playback verified with mpv smoke test exit code 0.
+2. **AnimeUnity (IT)**:
+   - TV Show catalog via `/archivio/get-animes` (CSRF + session management).
+   - Search, episode pagination, server discovery (`vixcloud.co` embeds).
+   - Dedicated `VixcloudExtractor` (direct high-speed MP4 extraction).
+   - Real playback verified with mpv smoke test exit code 0.
+3. **MEGAKino (DE)**:
+   - Movie and serial catalog, search via POST form, episode discovery.
+   - Session/token bootstrapping (`/index.php?yg=token`).
+   - Server discovery mapped to `VoeExtractor`.
+   - Real playback verified with mpv smoke test exit code 0.
+
+- All 9 providers pass `SelfTest.run()` with `SELF_TEST_OK` and 9/9 passing status.
+
