@@ -7,20 +7,10 @@ Upstream reference reviewed: `streamflix-reborn2/streamflix` at commit `91b27174
 | Area | Status | Notes |
 |---|---|---|
 | Windows desktop UI | Implemented | Swing/JVM, mouse + keyboard friendly |
-| Android SDK dependency | Removed from MVP | Java 21 only |
-| Movies | Implemented | FanPelis |
-| Series | Implemented | FanPelis |
-| Search | Implemented | FanPelis |
-| Seasons/episodes | Implemented | FanPelis |
-| Server discovery | Implemented | FanPelis player API |
+| Android SDK dependency | Removed from MVP | Java 17+ only |
+| Core features | Ported | Movies, Series, Search, Seasons/episodes, Server discovery |
 | Direct HLS/MP4 | Implemented | mpv |
-| Filemoon | Ported | Pure JVM HTTP/crypto flow based on upstream extractor |
-| DoodStream | Ported | Live extraction validated |
-| Goodstream | Ported | Live extraction validated |
-| VOE | Ported | Pure JVM HTML/decryption flow based on upstream extractor |
-| Streamtape | Ported | Pure JVM redirect flow based on upstream extractor |
-| VOE / Streamtape | Ported | VOE updated for current payload format; Streamtape JVM port included |
-| Vimeos/Lamovie and other extractors | Pending | Automatic fallback tries supported servers first; browser fallback remains available |
+| Providers / Extractors | Branch dependent | Subject to change based on active branch |
 | Cloudflare/WebView bypass | Pending | Needs WebView2/JCEF strategy |
 | Profiles/Supabase | Pending | Not part of MVP |
 | History/favorites | Pending | Not part of MVP |

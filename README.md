@@ -26,43 +26,38 @@ Not yet at Android parity:
 - Android WebView/Cloudflare bypass flows still need a WebView2/JCEF desktop replacement
 - Supabase profile sync, favorites/history sync and Chromecast are not yet ported
 
-## Requirements on Windows
+## Requirements
 
-1. JDK 21 or newer (`java`, `javac`, `jar`, `jpackage` on PATH)
+1. JDK 17 or newer (`java`, `javac`, `jar`, and optionally `jpackage` on PATH)
 2. [mpv](https://mpv.io/) for in-app playback
 
-The launcher searches for mpv in this order:
-
+The build system searches for mpv in this order:
 1. `STREAMFLIX_MPV` environment variable
-2. `tools\mpv\mpv.exe` inside this project
-3. `mpv.exe` on PATH
-4. common Windows installation paths
+2. `tools\mpv\mpv.exe` inside this project (use `setup-mpv.ps1` to download)
 
-## Run from source on Windows
+## Building on Windows
 
-```bat
-run-windows.bat
+To build a standalone JAR (requires `lib` folder next to it):
+```powershell
+.\build.ps1 -JarOnly
 ```
 
-## Build a Windows app image
-
-```bat
-build-windows.bat
+To build a Windows app image (includes bundled JRE and mpv):
+```powershell
+.\build.ps1
 ```
+Output: `dist\StreamflixDesktop\StreamflixDesktop.exe`
 
-Output:
-
-```text
-dist\StreamflixDesktop\StreamflixDesktop.exe
+To create a release ZIP with SHA-256:
+```powershell
+.\release.ps1
 ```
-
-`jpackage --type app-image` does not require an MSI installer toolchain and bundles a Java runtime with the app image.
 
 ## Linux/macOS development build
 
 ```bash
 ./build.sh
-java -jar build/streamflix-desktop.jar
+./build.sh --run
 ```
 
 ## Architecture
