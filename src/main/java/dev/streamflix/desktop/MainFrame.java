@@ -7,7 +7,7 @@ import java.awt.event.*;
 import java.util.List;
 
 final class MainFrame extends JFrame {
-    private enum Mode { MOVIES, SERIES, SEARCH }
+    private enum Mode { MOVIES, SERIES, SEARCH, FAVORITES, HISTORY }
 
     private final List<Provider> providers;
     private Provider provider;
@@ -17,8 +17,10 @@ final class MainFrame extends JFrame {
     private final JTextField search = new JTextField(22);
     private final JButton moviesButton = Theme.button("Películas");
     private final JButton seriesButton = Theme.button("Series");
-    private final JButton prevButton = Theme.button("‹");
-    private final JButton nextButton = Theme.button("›");
+    private final JButton favoritesButton = Theme.button("Favoritos");
+    private final JButton historyButton = Theme.button("Historial");
+    private final JButton prevButton = Theme.button("◄");
+    private final JButton nextButton = Theme.button("►");
     private final JLabel pageLabel = new JLabel("1");
     private Mode mode = Mode.MOVIES;
     private int page = 1;
@@ -69,8 +71,12 @@ final class MainFrame extends JFrame {
         nav.add(providerBox);
         moviesButton.addActionListener(e -> switchMode(Mode.MOVIES));
         seriesButton.addActionListener(e -> switchMode(Mode.SERIES));
+        favoritesButton.addActionListener(e -> switchMode(Mode.FAVORITES));
+        historyButton.addActionListener(e -> switchMode(Mode.HISTORY));
         nav.add(moviesButton);
         nav.add(seriesButton);
+        nav.add(favoritesButton);
+        nav.add(historyButton);
         header.add(nav, BorderLayout.CENTER);
 
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
@@ -190,6 +196,8 @@ final class MainFrame extends JFrame {
                     case MOVIES -> requestProvider.movies(requestPage);
                     case SERIES -> requestProvider.tvShows(requestPage);
                     case SEARCH -> requestProvider.search(requestQuery, requestPage);
+                    case FAVORITES -> UserData.getFavorites();
+                    case HISTORY -> UserData.getHistory();
                 };
             }
 
@@ -253,7 +261,9 @@ final class MainFrame extends JFrame {
     }
 
     private void openDetails(Models.ShowItem item) {
-        new DetailDialog(this, provider, item).setVisible(true);
+        Provider itemProvider = ProviderRegistry.get(item.providerId());
+        if (itemProvider == null) itemProvider = provider;
+        new DetailDialog(this, itemProvider, item).setVisible(true);
     }
 
     private void rebuildGridColumns() {
@@ -264,9 +274,11 @@ final class MainFrame extends JFrame {
 
     private String labelForMode(Mode value) {
         return switch (value) {
-            case MOVIES -> "películas";
+            case MOVIES -> "pel\u00edculas";
             case SERIES -> "series";
             case SEARCH -> "resultados";
+            case FAVORITES -> "favoritos";
+            case HISTORY -> "historial";
         };
     }
 

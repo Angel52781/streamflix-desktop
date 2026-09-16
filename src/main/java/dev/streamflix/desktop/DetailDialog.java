@@ -38,10 +38,23 @@ final class DetailDialog extends JDialog {
         JLabel title = new JLabel(item.title());
         title.setFont(title.getFont().deriveFont(Font.BOLD, 24f));
         top.add(title, BorderLayout.CENTER);
-        JLabel badge = new JLabel(item.type() == Models.ShowType.MOVIE ? "PELÍCULA" : "SERIE");
+
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 14, 0));
+        right.setOpaque(false);
+
+        JButton favButton = Theme.button(UserData.isFavorite(provider.id(), item.id()) ? "\u2665 Quitar Favorito" : "\u2661 A\u00f1adir Favorito");
+        favButton.addActionListener(e -> {
+            UserData.toggleFavorite(item);
+            favButton.setText(UserData.isFavorite(provider.id(), item.id()) ? "\u2665 Quitar Favorito" : "\u2661 A\u00f1adir Favorito");
+        });
+        right.add(favButton);
+
+        JLabel badge = new JLabel(item.type() == Models.ShowType.MOVIE ? "PEL\u00cdCULA" : "SERIE");
         badge.setForeground(Theme.ACCENT);
         badge.setFont(badge.getFont().deriveFont(Font.BOLD, 12f));
-        top.add(badge, BorderLayout.EAST);
+        right.add(badge);
+
+        top.add(right, BorderLayout.EAST);
         return top;
     }
 
@@ -282,7 +295,8 @@ final class DetailDialog extends JDialog {
                 try {
                     ResolvedMedia resolved = get();
                     MpvPlayer.play(resolved.video(), mediaTitle);
-                    status.setText("Reproduciendo · " + resolved.server().name());
+                    UserData.recordHistory(item);
+                    status.setText("Reproduciendo \u2014 " + resolved.server().name());
                 } catch (Exception ex) {
                     Throwable cause = ex instanceof ExecutionException && ex.getCause() != null ? ex.getCause() : ex;
                     status.setText("No se pudo reproducir");
@@ -302,7 +316,8 @@ final class DetailDialog extends JDialog {
                 try {
                     Models.Video video = get();
                     MpvPlayer.play(video, mediaTitle);
-                    status.setText("Reproduciendo · " + server.name());
+                    UserData.recordHistory(item);
+                    status.setText("Reproduciendo \u2014 " + server.name());
                 } catch (ExecutionException ex) {
                     Throwable cause = ex.getCause();
                     if (cause instanceof UnsupportedOperationException) {

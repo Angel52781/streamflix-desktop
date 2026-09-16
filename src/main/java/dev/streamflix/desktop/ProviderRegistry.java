@@ -18,4 +18,8 @@ final class ProviderRegistry {
                 new MegaKinoProvider()
         );
     }
+
+    static Provider get(String id) {
+        return all().stream().filter(p -> p.id().equals(id)).findFirst().orElse(null);
+    }
 }
