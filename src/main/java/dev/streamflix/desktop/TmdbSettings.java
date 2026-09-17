@@ -34,6 +34,10 @@ final class TmdbSettings {
         return !clean(System.getenv(ENV_KEY)).isBlank();
     }
 
+    static boolean hasApiKey() throws TmdbException {
+        return !apiKey().isBlank();
+    }
+
     static String localApiKey() throws TmdbException {
         return readApiKey(settingsFile());
     }

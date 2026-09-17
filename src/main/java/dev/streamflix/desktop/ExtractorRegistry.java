@@ -7,8 +7,10 @@ import java.util.List;
 final class ExtractorRegistry {
     private static final int MAX_DELEGATION_DEPTH = 4;
     private final List<Extractor> extractors = List.of(
+            new M3uStreamExtractor(),
             new DirectExtractor(),
             new VixSrcExtractor(),
+            new EsprinahyExtractor(),
             new SaturnExtractor(),
             new VixcloudExtractor(),
             new VoeExtractor(),

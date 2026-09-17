@@ -13,7 +13,7 @@ final class NuuploadExtractor implements Extractor {
     @Override public String name() { return "Nuupload"; }
     @Override public boolean supports(String url) {
         String u = url == null ? "" : url.toLowerCase(Locale.ROOT);
-        return u.contains("nupload.top/") || u.contains("nupupload.top/") || u.contains("nupload.me/");
+        return u.contains("nupload.top/") || u.contains("nupupload.top/") || u.contains("nupload.me/") || u.contains("nupload.my/");
     }
 
     @Override public Models.Video extract(String url) throws Exception {

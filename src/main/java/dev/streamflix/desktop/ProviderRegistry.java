@@ -7,9 +7,19 @@ final class ProviderRegistry {
 
     static List<Provider> all() {
         return List.of(
-                new FanpelisProvider(),
                 new TmdbProvider("en"),
                 new TmdbProvider("es"),
+                new M3uLiveProvider("iptv-spain", "IPTV Spain",
+                        "https://iptv-org.github.io/iptv/languages/spa.m3u"),
+                new M3uLiveProvider("iptv-all-world", "IPTV All World",
+                        "https://iptv-org.github.io/iptv/index.m3u"),
+                new M3uLiveProvider("pluto-mx", "Pluto TV MX",
+                        "https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/plutotv_mx.m3u"),
+                new M3uLiveProvider("pluto-es", "Pluto TV ES",
+                        "https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/plutotv_es.m3u"),
+                new M3uLiveProvider("pluto-us", "Pluto TV US",
+                        "https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/plutotv_us.m3u"),
+                new FanpelisProvider(),
                 new RidoMoviesProvider(),
                 new PelisflixHdProvider(),
                 new AnimeWorldProvider(),

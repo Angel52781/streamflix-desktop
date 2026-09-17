@@ -21,6 +21,8 @@ public final class ExtractorFixtureTest {
         require(new VoeExtractor().supports("https://voe.sx/e/abc"), "voe host");
         require(new SaturnExtractor().supports("https://play.saturncdn.net/embed/123"), "saturn host");
         require(new VixcloudExtractor().supports("https://vixcloud.co/embed/123"), "vixcloud host");
+        require(new NuuploadExtractor().supports("https://nupload.my/watch/demo"), "nupload current host");
+        require(new EsprinahyExtractor().supports("https://esprinahy.com/f/demo.html"), "esprinahy host");
         require(new VixSrcExtractor().supports("https://vixsrc.to/api/movie/550?lang=en"), "vixsrc host");
         VixSrcExtractor.StreamParams vix = VixSrcExtractor.parseStreamParams("""
                 <script>

@@ -4,6 +4,8 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 final class MainFrame extends JFrame {
@@ -19,9 +21,10 @@ final class MainFrame extends JFrame {
     private final JButton seriesButton = Theme.button("Series");
     private final JButton favoritesButton = Theme.button("Favoritos");
     private final JButton historyButton = Theme.button("Historial");
-    private final JButton prevButton = Theme.button("◄");
-    private final JButton nextButton = Theme.button("►");
-    private final JLabel pageLabel = new JLabel("1");
+    private final JButton prevButton = Theme.button("Inicio");
+    private final JButton nextButton = Theme.button("Cargar más");
+    private final JLabel pageLabel = new JLabel("0 cargados");
+    private final List<Models.ShowItem> loadedItems = new ArrayList<>();
     private Mode mode = Mode.MOVIES;
     private int page = 1;
     private String query = "";
@@ -95,7 +98,7 @@ final class MainFrame extends JFrame {
         searchButton.addActionListener(e -> runSearch());
         JButton settingsButton = Theme.button("Configuración");
         settingsButton.setToolTipText("Configurar TMDb y opciones locales");
-        settingsButton.addActionListener(e -> new SettingsDialog(this).setVisible(true));
+        settingsButton.addActionListener(e -> openSettings());
         right.add(search);
         right.add(searchButton);
         right.add(settingsButton);
@@ -127,11 +130,18 @@ final class MainFrame extends JFrame {
         JPanel pager = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         pager.setOpaque(false);
         prevButton.addActionListener(e -> {
-            if (page > 1) { page--; loadPage(); }
+            if (page > 1) {
+                page = 1;
+                loadedItems.clear();
+                loadPage(false);
+            }
         });
-        nextButton.addActionListener(e -> { page++; loadPage(); });
+        nextButton.addActionListener(e -> {
+            page++;
+            loadPage(true);
+        });
         pager.add(prevButton);
-        pageLabel.setPreferredSize(new Dimension(36, 30));
+        pageLabel.setPreferredSize(new Dimension(120, 30));
         pageLabel.setHorizontalAlignment(SwingConstants.CENTER);
         pager.add(pageLabel);
         pager.add(nextButton);
@@ -149,6 +159,7 @@ final class MainFrame extends JFrame {
             providerBox.setSelectedIndex(index);
         }
         page = 1;
+        loadedItems.clear();
         query = "";
         search.setText("");
         mode = provider.supportsMovies() ? Mode.MOVIES : Mode.SERIES;
@@ -168,9 +179,10 @@ final class MainFrame extends JFrame {
         if (newMode == Mode.SERIES && !provider.supportsTvShows()) return;
         mode = newMode;
         page = 1;
+        loadedItems.clear();
         query = "";
         search.setText("");
-        loadPage();
+        loadPage(false);
     }
 
     private void runSearch() {
@@ -179,28 +191,56 @@ final class MainFrame extends JFrame {
         mode = Mode.SEARCH;
         query = q;
         page = 1;
-        loadPage();
+        loadedItems.clear();
+        loadPage(false);
     }
 
     private void loadPage() {
+        loadPage(false);
+    }
+
+    private void loadPage(boolean append) {
         if (activeWorker != null && !activeWorker.isDone()) activeWorker.cancel(true);
         Provider requestProvider = provider;
         Mode requestMode = mode;
         int requestPage = page;
         String requestQuery = query;
 
-        String action = requestMode == Mode.SEARCH
-                ? "Buscando “" + requestQuery + "”…"
-                : "Cargando " + labelForMode(requestMode) + "…";
+        if (!append) loadedItems.clear();
+
+        if (requestProvider instanceof TmdbProvider) {
+            try {
+                if (!TmdbSettings.hasApiKey()) {
+                    renderTmdbSetup();
+                    setBusy(false, "TMDb requiere una API key");
+                    pageLabel.setText("0 cargados");
+                    nextButton.setEnabled(false);
+                    return;
+                }
+            } catch (TmdbException ex) {
+                renderError(ex);
+                setBusy(false, "Configuración de TMDb inválida");
+                nextButton.setEnabled(false);
+                return;
+            }
+        }
+
+        String action = append
+                ? "Cargando más…"
+                : requestMode == Mode.SEARCH
+                    ? "Buscando “" + requestQuery + "”…"
+                    : "Cargando " + labelForMode(requestMode) + "…";
         setBusy(true, action);
-        pageLabel.setText(String.valueOf(requestPage));
+        pageLabel.setText(loadedItems.size() + " cargados");
         prevButton.setEnabled(requestPage > 1);
-        grid.removeAll();
-        JLabel loading = Theme.muted("Cargando desde " + requestProvider.name() + "…");
-        loading.setFont(loading.getFont().deriveFont(16f));
-        grid.add(loading);
-        grid.revalidate();
-        grid.repaint();
+        if (!append) {
+            grid.removeAll();
+            JLabel loading = Theme.muted("Cargando desde " + requestProvider.name() + "…");
+            loading.setFont(loading.getFont().deriveFont(16f));
+            grid.add(loading);
+            grid.revalidate();
+            grid.repaint();
+        }
 
         activeWorker = new SwingWorker<>() {
             @Override protected List<Models.ShowItem> doInBackground() throws Exception {
@@ -217,21 +257,44 @@ final class MainFrame extends JFrame {
                 if (isCancelled()) return;
                 try {
                     List<Models.ShowItem> items = get();
-                    render(items);
-                    String text = items.isEmpty()
+                    mergeLoaded(items, append);
+                    render(loadedItems);
+                    String text = loadedItems.isEmpty()
                             ? "Sin resultados · " + requestProvider.name()
-                            : items.size() + " resultados · " + requestProvider.name();
+                            : loadedItems.size() + " cargados · " + requestProvider.name();
                     setBusy(false, text);
-                    nextButton.setEnabled(!items.isEmpty());
+                    pageLabel.setText(loadedItems.size() + " cargados");
+                    boolean pagedMode = requestMode == Mode.MOVIES || requestMode == Mode.SERIES || requestMode == Mode.SEARCH;
+                    nextButton.setEnabled(pagedMode && !items.isEmpty());
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-                    renderError(cause);
-                    setBusy(false, "Error de conexión · " + requestProvider.name());
-                    nextButton.setEnabled(false);
+                    if (append && !loadedItems.isEmpty()) {
+                        page = Math.max(1, page - 1);
+                        setBusy(false, "No se pudo cargar más · " + requestProvider.name());
+                        pageLabel.setText(loadedItems.size() + " cargados");
+                        nextButton.setEnabled(true);
+                    } else {
+                        renderError(cause);
+                        setBusy(false, "Error de conexión · " + requestProvider.name());
+                        nextButton.setEnabled(false);
+                    }
                 }
             }
         };
         activeWorker.execute();
+    }
+
+    private void mergeLoaded(List<Models.ShowItem> items, boolean append) {
+        if (!append) loadedItems.clear();
+        LinkedHashMap<String, Models.ShowItem> unique = new LinkedHashMap<>();
+        for (Models.ShowItem existing : loadedItems) unique.put(itemKey(existing), existing);
+        for (Models.ShowItem item : items) unique.putIfAbsent(itemKey(item), item);
+        loadedItems.clear();
+        loadedItems.addAll(unique.values());
+    }
+
+    private static String itemKey(Models.ShowItem item) {
+        return (item.sourceProviderId() == null ? "" : item.sourceProviderId()) + "|" + item.id();
     }
 
     private void render(List<Models.ShowItem> items) {
@@ -248,6 +311,32 @@ final class MainFrame extends JFrame {
         }
         grid.revalidate();
         grid.repaint();
+    }
+
+    private void renderTmdbSetup() {
+        grid.removeAll();
+        JPanel panel = new JPanel();
+        panel.setOpaque(false);
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        JLabel title = new JLabel("TMDb necesita una API key");
+        title.setForeground(Theme.TEXT);
+        title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
+        JLabel message = Theme.muted("Configura una API key personal de TMDb para habilitar este catálogo.");
+        JButton configure = Theme.button("Configurar TMDb");
+        configure.addActionListener(e -> openSettings());
+        panel.add(title);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(message);
+        panel.add(Box.createVerticalStrut(14));
+        panel.add(configure);
+        grid.add(panel);
+        grid.revalidate();
+        grid.repaint();
+    }
+
+    private void openSettings() {
+        new SettingsDialog(this).setVisible(true);
+        if (provider instanceof TmdbProvider) loadPage(false);
     }
 
     private void renderError(Throwable error) {
