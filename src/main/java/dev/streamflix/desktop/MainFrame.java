@@ -37,6 +37,9 @@ final class MainFrame extends JFrame {
         for (Provider item : this.providers) providerBox.addItem(item.name());
 
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        addWindowListener(new WindowAdapter() {
+            @Override public void windowClosing(WindowEvent e) { MpvPlayer.shutdown(); }
+        });
         setMinimumSize(new Dimension(980, 680));
         setSize(1280, 820);
         setLocationRelativeTo(null);
@@ -51,6 +54,11 @@ final class MainFrame extends JFrame {
         });
         normalizeModeForProvider();
         loadPage();
+    }
+
+    @Override public void dispose() {
+        try { MpvPlayer.shutdown(); }
+        finally { super.dispose(); }
     }
 
     private JComponent buildHeader() {

@@ -1,17 +1,140 @@
 package dev.streamflix.desktop;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.*;
+import java.text.Normalizer;
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 final class MpvPlayer {
-    private MpvPlayer() {}
+    private static final MpvPlayer PLAYER = new MpvPlayer(MpvPlayer::requireMpv,
+            ProcessBuilder::start, 1500, 1000);
+
+    @FunctionalInterface
+    interface ProcessLauncher {
+        Process start(ProcessBuilder builder) throws IOException;
+    }
+
+    private final Supplier<String> executable;
+    private final ProcessLauncher launcher;
+    private final long startupMillis;
+    private final long stopMillis;
+    private Process active;
+    private long requestSequence;
+    private long latestRequest;
+    private volatile boolean closed;
+
+    // Isolated instances let fixtures supply fake processes without finding or running mpv.
+    MpvPlayer(Supplier<String> executable, ProcessLauncher launcher, long startupMillis, long stopMillis) {
+        if (startupMillis <= 0 || stopMillis <= 0) throw new IllegalArgumentException("Invalid timeout");
+        this.executable = executable;
+        this.launcher = launcher;
+        this.startupMillis = startupMillis;
+        this.stopMillis = stopMillis;
+    }
 
     static boolean isAvailable() { return locate() != null; }
 
+    static long beginRequest() { return PLAYER.newRequest(); }
+
     static void play(Models.Video video, String title) throws Exception {
-        String mpv = requireMpv();
+        long requestId = PLAYER.newRequest();
+        PLAYER.start(video, title, requestId);
+    }
+
+    static void play(Models.Video video, String title, long requestId) throws Exception {
+        PLAYER.start(video, title, requestId);
+    }
+
+    static void shutdown() { PLAYER.close(); }
+    static boolean isShutdown() { return PLAYER.closed; }
+
+    synchronized long newRequest() {
+        checkOpen();
+        latestRequest = ++requestSequence;
+        return latestRequest;
+    }
+
+    synchronized void start(Models.Video video, String title) throws Exception {
+        long requestId = newRequest();
+        start(video, title, requestId);
+    }
+
+    synchronized void start(Models.Video video, String title, long requestId) throws Exception {
+        checkRequest(requestId);
+        if (video == null || video.source() == null || video.source().isBlank()) {
+            throw new IllegalArgumentException("El servidor no devolvi\u00f3 un video reproducible.");
+        }
+        List<String> command = playbackCommand(executable.get(), video, title);
+        stop();
+        checkRequest(requestId);
+        active = launch(command);
+        try {
+            // Extraction alone is not success. A surviving process counts as started;
+            // an early clean exit (e.g. the user closed mpv) must not trigger fallback.
+            if (active.waitFor(startupMillis, TimeUnit.MILLISECONDS) || !active.isAlive()) {
+                int exit = active.exitValue();
+                active = null;
+                if (exit != 0) throw new IOException("mpv no pudo iniciar la reproducci\u00f3n.");
+            }
+            checkRequest(requestId);
+        } catch (InterruptedException ex) {
+            try { stop(); }
+            finally { Thread.currentThread().interrupt(); }
+            throw ex;
+        } catch (CancellationException ex) {
+            stop();
+            throw ex;
+        }
+    }
+
+    // Keep ownership until termination is confirmed; never launch over a stuck child.
+    synchronized void stop() {
+        if (active == null) return;
+        boolean interrupted = Thread.interrupted();
+        try {
+            if (active.isAlive()) {
+                active.destroy();
+                try { active.waitFor(stopMillis, TimeUnit.MILLISECONDS); }
+                catch (InterruptedException ex) { interrupted = true; }
+                if (active.isAlive()) {
+                    active.destroyForcibly();
+                    try { active.waitFor(stopMillis, TimeUnit.MILLISECONDS); }
+                    catch (InterruptedException ex) { interrupted = true; }
+                }
+            }
+            if (active.isAlive()) throw new IllegalStateException("No se pudo cerrar la reproducci\u00f3n anterior.");
+            active = null;
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
+    void close() {
+        // Set before taking the monitor so queued/extracting workers cannot start later.
+        closed = true;
+        stop();
+    }
+
+    private void checkOpen() {
+        if (closed || Thread.currentThread().isInterrupted()) throw new CancellationException("Reproducci\u00f3n cancelada.");
+    }
+
+    private void checkRequest(long requestId) {
+        checkOpen();
+        if (requestId != latestRequest) throw new CancellationException("Solicitud de reproducci\u00f3n reemplazada.");
+    }
+
+    private Process launch(List<String> command) throws IOException {
+        // mpv can fill an unread stdout pipe during playback and then hang.
+        return launcher.start(new ProcessBuilder(command).redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD));
+    }
+
+    static List<String> playbackCommand(String mpv, Models.Video video, String title) {
         ArrayList<String> cmd = new ArrayList<>();
         cmd.add(mpv);
         cmd.add("--force-window=yes");
@@ -20,15 +143,46 @@ final class MpvPlayer {
         cmd.add("--hwdec=auto-safe");
         cmd.add("--force-media-title=" + safe(title));
         addHeaders(cmd, video);
-        for (Models.Subtitle subtitle : video.subtitles()) {
+        List<Models.Subtitle> subtitles = orderedSubtitles(video.subtitles());
+        // Let mpv assign track IDs: embedded subtitles can occupy any earlier IDs.
+        // Explicit external files take priority, with insertion order breaking ties.
+        if (!subtitles.isEmpty()) {
+            cmd.add("--slang=es,spa,es-ES,es-419,en,eng");
+            cmd.add("--sid=auto");
+        }
+        for (Models.Subtitle subtitle : subtitles) {
             cmd.add("--sub-file=" + subtitle.file());
         }
         cmd.add(video.source());
-        new ProcessBuilder(cmd).redirectErrorStream(true).start();
+        return List.copyOf(cmd);
+    }
+
+    static List<Models.Subtitle> orderedSubtitles(List<Models.Subtitle> subtitles) {
+        if (subtitles == null) return List.of();
+        return subtitles.stream()
+                .filter(s -> s != null && s.file() != null && !s.file().isBlank())
+                .sorted(Comparator.comparingInt((Models.Subtitle s) -> s.isDefault() ? 0 : 1)
+                        .thenComparingInt(s -> languageRank(s.label())))
+                .toList();
+    }
+
+    private static int languageRank(String label) {
+        if (label == null) return 2;
+        String normalized = Normalizer.normalize(label, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "").toLowerCase(Locale.ROOT);
+        Set<String> words = new HashSet<>(Arrays.asList(normalized.split("[^a-z]+")));
+        if (!Collections.disjoint(words, Set.of("spanish", "espanol", "es", "spa"))) return 0;
+        if (!Collections.disjoint(words, Set.of("english", "ingles", "en", "eng"))) return 1;
+        return 2;
     }
 
     static int smoke(Models.Video video) throws Exception {
-        String mpv = requireMpv();
+        return PLAYER.runSmoke(video);
+    }
+
+    synchronized int runSmoke(Models.Video video) throws Exception {
+        checkOpen();
+        String mpv = executable.get();
         ArrayList<String> cmd = new ArrayList<>();
         cmd.add(mpv);
         cmd.add("--no-config");
@@ -40,19 +194,18 @@ final class MpvPlayer {
         addHeaders(cmd, video);
         cmd.add(video.source());
 
-        Process process = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-        Thread drain = new Thread(() -> {
-            try { process.getInputStream().transferTo(java.io.OutputStream.nullOutputStream()); }
-            catch (Exception ignored) {}
-        }, "mpv-smoke-drain");
-        drain.setDaemon(true);
-        drain.start();
-        if (!process.waitFor(30, TimeUnit.SECONDS)) {
-            process.destroyForcibly();
-            process.waitFor(5, TimeUnit.SECONDS);
-            return 124;
+        stop();
+        checkOpen();
+        active = launch(cmd);
+        try {
+            if (!active.waitFor(30, TimeUnit.SECONDS)) return 124;
+            return active.exitValue();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw ex;
+        } finally {
+            stop();
         }
-        return process.exitValue();
     }
 
     private static void addHeaders(List<String> cmd, Models.Video video) {

@@ -48,7 +48,7 @@ $manifest = "Manifest-Version: 1.0`nMain-Class: dev.streamflix.desktop.App`nImpl
 [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'build\MANIFEST.MF'), $manifest, (New-Object Text.UTF8Encoding $false))
 Invoke-Checked $jar @('--create','--file','build\streamflix-desktop.jar','--date=2020-01-01T00:00:00Z','--manifest','build\MANIFEST.MF','-C','build\classes','.')
 Invoke-Checked $javac (@('--release','17','-encoding','UTF-8','-cp',("build\classes;" + $depCp),'-d','build\test-classes') + $tests)
-foreach ($test in @('JsonTest','ProviderFixtureTest','TmdbFixtureTest','ExtractorFixtureTest','DependencySmokeTest','UserDataTest')) {
+foreach ($test in @('JsonTest','ProviderFixtureTest','TmdbFixtureTest','ExtractorFixtureTest','DependencySmokeTest','UserDataTest','MpvPlayerTest','PlaybackFallbackTest')) {
     Invoke-Checked $java @('-cp','build\streamflix-desktop.jar;build\test-classes',"dev.streamflix.desktop.$test")
 }
 Write-Host 'JAR OK: build\streamflix-desktop.jar (keep sibling build\lib directory)'

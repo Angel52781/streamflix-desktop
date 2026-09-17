@@ -5,6 +5,7 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
@@ -226,11 +227,13 @@ final class DetailDialog extends JDialog {
     }
 
     private void chooseServerAndPlay(String providerItemId, String mediaTitle, boolean autoPlay) {
+        long playbackRequest = MpvPlayer.beginRequest();
         status.setText("Buscando servidores…");
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         new SwingWorker<List<Models.Server>, Void>() {
             @Override protected List<Models.Server> doInBackground() throws Exception { return provider.servers(providerItemId); }
             @Override protected void done() {
+                if (MpvPlayer.isShutdown() || !isDisplayable()) return;
                 setCursor(Cursor.getDefaultCursor());
                 try {
                     List<Models.Server> servers = get();
@@ -241,15 +244,15 @@ final class DetailDialog extends JDialog {
                     }
                     Models.Server selected;
                     if (autoPlay) {
-                        resolveAnyAndPlay(servers, mediaTitle);
+                        resolveAnyAndPlay(servers, mediaTitle, playbackRequest);
                         return;
                     } else {
                         selected = selectServer(servers);
                     }
                     
                     if (selected == null) return;
-                    if ("__auto__".equals(selected.id())) resolveAnyAndPlay(servers, mediaTitle);
-                    else resolveAndPlay(selected, mediaTitle);
+                    if ("__auto__".equals(selected.id())) resolveAnyAndPlay(servers, mediaTitle, playbackRequest);
+                    else resolveAndPlay(selected, mediaTitle, playbackRequest);
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     status.setText("Error obteniendo servidores");
@@ -274,29 +277,56 @@ final class DetailDialog extends JDialog {
         return null;
     }
 
-    private record ResolvedMedia(Models.Server server, Models.Video video) {}
+    @FunctionalInterface
+    interface VideoResolver { Models.Video resolve(Models.Server server) throws Exception; }
 
-    private void resolveAnyAndPlay(List<Models.Server> servers, String mediaTitle) {
+    @FunctionalInterface
+    interface VideoStarter { void start(Models.Video video, String title) throws Exception; }
+
+    // Shared by the Swing worker and headless fixtures. Success includes player startup.
+    static Models.Server startFirstAvailable(List<Models.Server> servers, String title,
+                                            VideoResolver resolver, VideoStarter starter) throws Exception {
+        Exception last = null;
+        for (Models.Server server : servers) {
+            try {
+                resolveAndStart(server, title, resolver, starter);
+                return server;
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw ex;
+            } catch (CancellationException ex) {
+                throw ex;
+            } catch (Exception ex) { last = ex; }
+        }
+        throw new IllegalStateException("Ning\u00fan servidor disponible pudo iniciar la reproducci\u00f3n.", last);
+    }
+
+    static void resolveAndStart(Models.Server server, String title,
+                                VideoResolver resolver, VideoStarter starter) throws Exception {
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+        Models.Video video = resolver.resolve(server);
+        if (video == null || video.source() == null || video.source().isBlank()) {
+            throw new IllegalStateException("El servidor no devolvi\u00f3 un video reproducible.");
+        }
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+        starter.start(video, title);
+    }
+
+    private void resolveAnyAndPlay(List<Models.Server> servers, String mediaTitle, long playbackRequest) {
         status.setText("Buscando un servidor compatible…");
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-        new SwingWorker<ResolvedMedia, Void>() {
-            @Override protected ResolvedMedia doInBackground() throws Exception {
-                Exception last = null;
-                for (Models.Server server : servers) {
-                    try {
-                        Models.Video video = extractors.resolve(server);
-                        if (video.source() != null && !video.source().isBlank()) return new ResolvedMedia(server, video);
-                    } catch (Exception ex) { last = ex; }
-                }
-                throw new IllegalStateException("Ningún servidor disponible pudo resolverse.", last);
+        new SwingWorker<Models.Server, Void>() {
+            @Override protected Models.Server doInBackground() throws Exception {
+                return startFirstAvailable(servers, mediaTitle, extractors::resolve,
+                        (video, title) -> MpvPlayer.play(video, title, playbackRequest));
             }
             @Override protected void done() {
+                if (MpvPlayer.isShutdown() || !isDisplayable()) return;
                 setCursor(Cursor.getDefaultCursor());
                 try {
-                    ResolvedMedia resolved = get();
-                    MpvPlayer.play(resolved.video(), mediaTitle);
+                    Models.Server server = get();
                     UserData.recordHistory(provider.id(), item);
-                    status.setText("Reproduciendo \u2014 " + resolved.server().name());
+                    status.setText("Reproduciendo \u2014 " + server.name());
                 } catch (Exception ex) {
                     Throwable cause = ex instanceof ExecutionException && ex.getCause() != null ? ex.getCause() : ex;
                     status.setText("No se pudo reproducir");
@@ -306,21 +336,28 @@ final class DetailDialog extends JDialog {
         }.execute();
     }
 
-    private void resolveAndPlay(Models.Server server, String mediaTitle) {
+    private void resolveAndPlay(Models.Server server, String mediaTitle, long playbackRequest) {
         status.setText("Resolviendo " + server.name() + "…");
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-        new SwingWorker<Models.Video, Void>() {
-            @Override protected Models.Video doInBackground() throws Exception { return extractors.resolve(server); }
+        new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() throws Exception {
+                resolveAndStart(server, mediaTitle, extractors::resolve,
+                        (video, title) -> MpvPlayer.play(video, title, playbackRequest));
+                return null;
+            }
             @Override protected void done() {
+                if (MpvPlayer.isShutdown() || !isDisplayable()) return;
                 setCursor(Cursor.getDefaultCursor());
                 try {
-                    Models.Video video = get();
-                    MpvPlayer.play(video, mediaTitle);
+                    get();
                     UserData.recordHistory(provider.id(), item);
                     status.setText("Reproduciendo \u2014 " + server.name());
                 } catch (ExecutionException ex) {
                     Throwable cause = ex.getCause();
-                    if (cause instanceof UnsupportedOperationException) {
+                    if (cause instanceof IllegalStateException && cause.getMessage() != null && cause.getMessage().contains("mpv")) {
+                        status.setText("mpv requerido");
+                        showError("mpv no est\u00e1 disponible", cause);
+                    } else if (cause instanceof UnsupportedOperationException) {
                         fallbackPrompt(server, cause.getMessage());
                     } else {
                         fallbackPrompt(server, "El extractor falló: " + (cause == null ? ex.getMessage() : cause.getMessage()));
