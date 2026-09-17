@@ -2,8 +2,10 @@ package dev.streamflix.desktop;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,6 +14,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 public class UserData {
+    private static final String DATA_DIR_PROPERTY = "streamflix.data.dir";
     private static final Path DATA_DIR;
     private static final Path FAVORITES_FILE;
     private static final Path HISTORY_FILE;
@@ -22,15 +25,23 @@ public class UserData {
     public record HistoryEntry(Models.ShowItem show, long timestamp, double progressSeconds, double durationSeconds) {}
 
     static {
-        String appData = System.getenv("APPDATA");
-        if (appData == null) {
-            appData = System.getProperty("user.home") + "/AppData/Roaming";
-        }
-        DATA_DIR = Path.of(appData, "Streamflix");
+        DATA_DIR = resolveDataDir();
         FAVORITES_FILE = DATA_DIR.resolve("favorites.json");
         HISTORY_FILE = DATA_DIR.resolve("history.json");
         loadFavorites();
         loadHistory();
+    }
+
+    private static Path resolveDataDir() {
+        String override = System.getProperty(DATA_DIR_PROPERTY);
+        if (override != null && !override.isBlank()) {
+            return Path.of(override).toAbsolutePath().normalize();
+        }
+        String appData = System.getenv("APPDATA");
+        if (appData == null || appData.isBlank()) {
+            appData = System.getProperty("user.home") + "/AppData/Roaming";
+        }
+        return Path.of(appData, "Streamflix").toAbsolutePath().normalize();
     }
 
     private static void loadFavorites() {
@@ -67,18 +78,16 @@ public class UserData {
 
     private static void saveFavorites() {
         try {
-            Files.createDirectories(DATA_DIR);
             List<Object> out = new ArrayList<>();
             for (Models.ShowItem item : favorites) {
                 out.add(serializeShowItem(item));
             }
-            Files.writeString(FAVORITES_FILE, Json.stringify(out), StandardCharsets.UTF_8);
+            writeAtomically(FAVORITES_FILE, Json.stringify(out));
         } catch (Exception ignored) {}
     }
 
     private static void saveHistory() {
         try {
-            Files.createDirectories(DATA_DIR);
             List<Object> out = new ArrayList<>();
             for (HistoryEntry entry : history) {
                 Map<String, Object> map = new LinkedHashMap<>();
@@ -88,8 +97,23 @@ public class UserData {
                 map.put("duration", entry.durationSeconds());
                 out.add(map);
             }
-            Files.writeString(HISTORY_FILE, Json.stringify(out), StandardCharsets.UTF_8);
+            writeAtomically(HISTORY_FILE, Json.stringify(out));
         } catch (Exception ignored) {}
+    }
+
+    private static void writeAtomically(Path target, String content) throws IOException {
+        Files.createDirectories(DATA_DIR);
+        Path temp = Files.createTempFile(DATA_DIR, target.getFileName().toString(), ".tmp");
+        try {
+            Files.writeString(temp, content, StandardCharsets.UTF_8);
+            try {
+                Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException ex) {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temp);
+        }
     }
 
     public static boolean isFavorite(String providerId, String id) {
@@ -178,14 +202,26 @@ public class UserData {
         );
     }
 
-    // Methods for testing only
+    // Methods for testing only. Tests must opt into an isolated directory before this class loads.
     static void clearForTests() {
+        requireTestDataDir();
         favorites.clear();
         history.clear();
         try {
             Files.deleteIfExists(FAVORITES_FILE);
             Files.deleteIfExists(HISTORY_FILE);
         } catch (Exception ignored) {}
+    }
+
+    private static void requireTestDataDir() {
+        String override = System.getProperty(DATA_DIR_PROPERTY);
+        if (override == null || override.isBlank()) {
+            throw new IllegalStateException("Tests must set -D" + DATA_DIR_PROPERTY + " to an isolated temporary directory before UserData is loaded.");
+        }
+        Path requested = Path.of(override).toAbsolutePath().normalize();
+        if (!requested.equals(DATA_DIR)) {
+            throw new IllegalStateException("Test data directory was changed after UserData initialization.");
+        }
     }
 
     static void loadForTests() {

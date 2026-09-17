@@ -1,19 +1,32 @@
 package dev.streamflix.desktop;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 public final class UserDataTest {
-    public static void main(String[] args) {
-        setup();
-        testProviderNamespacing();
-        
-        setup();
-        testSerialization();
-        
-        setup();
-        testProgressRules();
+    public static void main(String[] args) throws Exception {
+        Path testDir = Files.createTempDirectory("streamflix-userdata-test-");
+        System.setProperty("streamflix.data.dir", testDir.toString());
+        try {
+            setup();
+            testProviderNamespacing();
 
-        System.out.println("UserDataTest OK");
+            setup();
+            testSerialization();
+
+            setup();
+            testProgressRules();
+
+            setup();
+            testCorruptFilesDoNotPreventLoad(testDir);
+
+            System.out.println("UserDataTest OK");
+        } finally {
+            UserData.clearForTests();
+            Files.deleteIfExists(testDir);
+            System.clearProperty("streamflix.data.dir");
+        }
     }
 
     private static void setup() {
@@ -52,17 +65,25 @@ public final class UserDataTest {
 
     private static void testProgressRules() {
         Models.ShowItem item = new Models.ShowItem("prog1", "prov1", "Prog Title", null, null, null, null, null, null, Models.ShowType.MOVIE);
-        
+
         UserData.recordHistory(item);
         require(UserData.getHistory().size() == 1, "history size == 1");
-        
+
         UserData.recordHistory(item, 45.0, 300.0);
         require(UserData.getHistory().size() == 1, "history size still 1");
-        
+
         UserData.recordHistory(item);
-        
+
         double progress = UserData.getProgressForTest(item);
         require(progress == 45.0, "progress should not be overwritten by 0.0 updates. Was: " + progress);
+    }
+
+    private static void testCorruptFilesDoNotPreventLoad(Path testDir) throws Exception {
+        Files.writeString(testDir.resolve("favorites.json"), "{not-json");
+        Files.writeString(testDir.resolve("history.json"), "[broken");
+        UserData.loadForTests();
+        require(UserData.getFavorites().isEmpty(), "corrupt favorites should load as empty");
+        require(UserData.getHistory().isEmpty(), "corrupt history should load as empty");
     }
 
     private static void require(boolean value, String name) {
