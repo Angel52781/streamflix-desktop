@@ -16,6 +16,8 @@ public final class ProviderFixtureTest {
         require(items.get(1).type() == Models.ShowType.TV_SHOW, "series type");
         require(items.get(0).providerId().equals("101"), "provider id");
         require(items.get(0).poster().contains("wp-content/uploads/2026/demo.jpg"), "poster path");
+        require(ProviderRegistry.get("tmdb-en") != null, "TMDb EN registered");
+        require(ProviderRegistry.get("tmdb-es") != null, "TMDb ES registered");
         System.out.println("ProviderFixtureTest OK");
     }
 

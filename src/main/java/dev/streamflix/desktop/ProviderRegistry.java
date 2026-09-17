@@ -8,6 +8,8 @@ final class ProviderRegistry {
     static List<Provider> all() {
         return List.of(
                 new FanpelisProvider(),
+                new TmdbProvider("en"),
+                new TmdbProvider("es"),
                 new RidoMoviesProvider(),
                 new PelisflixHdProvider(),
                 new AnimeWorldProvider(),

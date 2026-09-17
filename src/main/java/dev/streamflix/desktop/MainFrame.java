@@ -93,8 +93,12 @@ final class MainFrame extends JFrame {
         search.addActionListener(e -> runSearch());
         JButton searchButton = Theme.button("Buscar");
         searchButton.addActionListener(e -> runSearch());
+        JButton settingsButton = Theme.button("Configuración");
+        settingsButton.setToolTipText("Configurar TMDb y opciones locales");
+        settingsButton.addActionListener(e -> new SettingsDialog(this).setVisible(true));
         right.add(search);
         right.add(searchButton);
+        right.add(settingsButton);
         header.add(right, BorderLayout.EAST);
         return header;
     }

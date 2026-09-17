@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class TmdbFixtureTest {
     public static void main(String[] args) throws Exception {
         testSettingsPrecedence();
+        testSettingsSaveUsesIsolatedDataDir();
         testMissingKeyFailsBeforeTransport();
         testMovieAndSearchMapping();
         testEpisodesAcrossSeasons();
@@ -30,6 +31,25 @@ public final class TmdbFixtureTest {
             Files.deleteIfExists(dir.resolve("settings.json"));
             Files.deleteIfExists(dir);
             Files.deleteIfExists(appData);
+        }
+    }
+
+    private static void testSettingsSaveUsesIsolatedDataDir() throws Exception {
+        Path dataDir = Files.createTempDirectory("streamflix-tmdb-save-");
+        String previous = System.getProperty("streamflix.data.dir");
+        System.setProperty("streamflix.data.dir", dataDir.toString());
+        try {
+            TmdbSettings.saveApiKey("0123456789abcdef0123456789abcdef");
+            require("0123456789abcdef0123456789abcdef".equals(TmdbSettings.localApiKey()), "saved local key");
+            String raw = Files.readString(dataDir.resolve("settings.json"));
+            require(raw.contains("\"tmdbApiKey\""), "settings field persisted");
+            TmdbSettings.saveApiKey("");
+            require(TmdbSettings.localApiKey().isBlank(), "empty key removes local setting");
+        } finally {
+            if (previous == null) System.clearProperty("streamflix.data.dir");
+            else System.setProperty("streamflix.data.dir", previous);
+            Files.deleteIfExists(dataDir.resolve("settings.json"));
+            Files.deleteIfExists(dataDir);
         }
     }
 
