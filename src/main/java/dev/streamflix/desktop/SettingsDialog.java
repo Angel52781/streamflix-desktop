@@ -32,14 +32,14 @@ final class SettingsDialog extends JDialog {
         c.gridy = 0;
         c.anchor = GridBagConstraints.WEST;
         c.insets = new Insets(0, 0, 8, 12);
-        JLabel label = new JLabel("TMDb API key");
+        JLabel label = new JLabel("TMDb API key / Read Access Token");
         label.setForeground(Theme.TEXT);
         form.add(label, c);
 
         c.gridx = 1;
         c.fill = GridBagConstraints.HORIZONTAL;
         c.weightx = 1;
-        tmdbKey.setToolTipText("Se guarda localmente en Streamflix/settings.json");
+        tmdbKey.setToolTipText("Acepta API key v3 o API Read Access Token; se guarda localmente en Streamflix/settings.json");
         form.add(tmdbKey, c);
 
         c.gridx = 1;

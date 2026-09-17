@@ -101,11 +101,11 @@ final class TmdbSettings {
 
     private static void validateForSave(String key) throws TmdbException {
         if (key.isBlank()) return; // Empty means remove the local key.
-        if (key.length() < 16 || key.length() > 256) {
-            throw new TmdbException("API key must be between 16 and 256 characters.");
+        if (key.length() < 16 || key.length() > 512) {
+            throw new TmdbException("TMDb credential must be between 16 and 512 characters.");
         }
         if (key.chars().anyMatch(Character::isWhitespace) || key.chars().anyMatch(Character::isISOControl)) {
-            throw new TmdbException("API key cannot contain whitespace or control characters.");
+            throw new TmdbException("TMDb credential cannot contain whitespace or control characters.");
         }
     }
 

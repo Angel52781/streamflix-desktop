@@ -11,6 +11,7 @@ public final class TmdbFixtureTest {
         testSettingsPrecedence();
         testSettingsSaveUsesIsolatedDataDir();
         testMissingKeyFailsBeforeTransport();
+        testAuthenticationModes();
         testMovieAndSearchMapping();
         testEpisodesAcrossSeasons();
         testSpanishIdentity();
@@ -66,6 +67,29 @@ public final class TmdbFixtureTest {
             require(ex.getMessage().contains("API key missing"), "missing key message");
             require(calls.get() == 0, "transport not called without key");
         }
+    }
+
+    private static void testAuthenticationModes() throws Exception {
+        AtomicInteger apiKeyCalls = new AtomicInteger();
+        TmdbClient apiKeyClient = new TmdbClient("en", () -> "0123456789abcdef0123456789abcdef", (url, headers) -> {
+            require(url.contains("api_key=0123456789abcdef0123456789abcdef"), "v3 API key query");
+            require(!headers.containsKey("Authorization"), "v3 API key has no bearer header");
+            apiKeyCalls.incrementAndGet();
+            return "{\"results\":[]}";
+        });
+        apiKeyClient.get("discover/movie", Map.of("page", "1"));
+        require(apiKeyCalls.get() == 1, "v3 API key transport called");
+
+        AtomicInteger bearerCalls = new AtomicInteger();
+        String token = "eyJhbGciOiJIUzI1NiJ9.fixture.signature";
+        TmdbClient bearerClient = new TmdbClient("en", () -> token, (url, headers) -> {
+            require(!url.contains("api_key="), "bearer token not placed in URL");
+            require(("Bearer " + token).equals(headers.get("Authorization")), "bearer header");
+            bearerCalls.incrementAndGet();
+            return "{\"results\":[]}";
+        });
+        bearerClient.get("discover/movie", Map.of("page", "1"));
+        require(bearerCalls.get() == 1, "bearer transport called");
     }
 
     private static void testMovieAndSearchMapping() throws Exception {

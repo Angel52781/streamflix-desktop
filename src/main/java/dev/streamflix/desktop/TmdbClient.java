@@ -39,9 +39,11 @@ final class TmdbClient {
         if (key == null || key.isBlank()) {
             throw new TmdbException("API key missing. Set STREAMFLIX_TMDB_API_KEY or tmdbApiKey in %APPDATA%/Streamflix/settings.json.");
         }
-        StringBuilder url = new StringBuilder("https://api.themoviedb.org/3/").append(path)
-                .append("?api_key=").append(Http.encode(key.strip()))
-                .append("&language=").append(language);
+        String credential = key.strip();
+        boolean v3ApiKey = credential.matches("(?i)[a-f0-9]{32}");
+        StringBuilder url = new StringBuilder("https://api.themoviedb.org/3/").append(path).append('?');
+        if (v3ApiKey) url.append("api_key=").append(Http.encode(credential)).append('&');
+        url.append("language=").append(language);
         parameters.forEach((name, value) -> {
             if (!List.of("page", "query", "include_adult", "sort_by").contains(name)) {
                 throw new IllegalArgumentException("TMDb: Invalid metadata parameter.");
@@ -50,7 +52,10 @@ final class TmdbClient {
         });
         String body;
         try {
-            body = transport.get(url.toString(), Map.of("Accept", "application/json"));
+            Map<String, String> headers = v3ApiKey
+                    ? Map.of("Accept", "application/json")
+                    : Map.of("Accept", "application/json", "Authorization", "Bearer " + credential);
+            body = transport.get(url.toString(), headers);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new InterruptedException("TMDb: Metadata request interrupted.");
