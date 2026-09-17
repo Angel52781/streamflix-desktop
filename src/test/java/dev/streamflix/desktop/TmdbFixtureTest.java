@@ -1,0 +1,126 @@
+package dev.streamflix.desktop;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+public final class TmdbFixtureTest {
+    public static void main(String[] args) throws Exception {
+        testSettingsPrecedence();
+        testMissingKeyFailsBeforeTransport();
+        testMovieAndSearchMapping();
+        testEpisodesAcrossSeasons();
+        testSpanishIdentity();
+        System.out.println("TmdbFixtureTest OK");
+    }
+
+    private static void testSettingsPrecedence() throws Exception {
+        Path appData = Files.createTempDirectory("streamflix-tmdb-settings-");
+        Path dir = appData.resolve("Streamflix");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("settings.json"), "{\"tmdbApiKey\":\" file-key \"}");
+        try {
+            Map<String, String> env = Map.of("APPDATA", appData.toString(), "STREAMFLIX_TMDB_API_KEY", " env-key ");
+            require("env-key".equals(TmdbSettings.apiKey(env, appData.toString())), "environment key precedence");
+            require("file-key".equals(TmdbSettings.apiKey(Map.of("APPDATA", appData.toString()), appData.toString())), "settings key fallback");
+        } finally {
+            Files.deleteIfExists(dir.resolve("settings.json"));
+            Files.deleteIfExists(dir);
+            Files.deleteIfExists(appData);
+        }
+    }
+
+    private static void testMissingKeyFailsBeforeTransport() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        TmdbClient client = new TmdbClient("en", () -> "", (url, headers) -> {
+            calls.incrementAndGet();
+            return "{}";
+        });
+        try {
+            client.get("discover/movie", Map.of("page", "1"));
+            throw new AssertionError("Expected missing API key error");
+        } catch (TmdbException ex) {
+            require(ex.getMessage().contains("API key missing"), "missing key message");
+            require(calls.get() == 0, "transport not called without key");
+        }
+    }
+
+    private static void testMovieAndSearchMapping() throws Exception {
+        TmdbClient client = client("en", url -> {
+            if (url.contains("discover/movie")) return """
+                    {"results":[{"id":11,"title":"Demo Movie","overview":"Movie overview","release_date":"2026-04-03","vote_average":7.9,"poster_path":"/poster.jpg","backdrop_path":"/backdrop.jpg"}]}
+                    """;
+            if (url.contains("search/multi")) return """
+                    {"results":[
+                      {"id":11,"media_type":"movie","title":"Demo Movie","release_date":"2026-04-03","vote_average":7.9,"poster_path":"/poster.jpg"},
+                      {"id":22,"media_type":"tv","name":"Demo Show","first_air_date":"2025-01-02","vote_average":8.1,"poster_path":"/show.jpg"},
+                      {"id":33,"media_type":"person","name":"Ignored Person"}
+                    ]}
+                    """;
+            throw new IllegalArgumentException("Unexpected URL");
+        });
+        TmdbProvider provider = new TmdbProvider(client);
+        List<Models.ShowItem> movies = provider.movies(1);
+        require(movies.size() == 1, "movie count");
+        Models.ShowItem movie = movies.get(0);
+        require("tmdb:movie:11".equals(movie.id()), "movie logical id");
+        require("movie/11".equals(movie.providerId()), "movie remote id");
+        require("tmdb-en".equals(movie.sourceProviderId()), "movie source provider");
+        require(movie.poster().equals("https://image.tmdb.org/t/p/w500/poster.jpg"), "movie poster");
+
+        List<Models.ShowItem> search = provider.search("Demo", 1);
+        require(search.size() == 2, "multi search filters people");
+        require(search.get(0).type() == Models.ShowType.MOVIE, "search movie type");
+        require(search.get(1).type() == Models.ShowType.TV_SHOW, "search tv type");
+    }
+
+    private static void testEpisodesAcrossSeasons() throws Exception {
+        TmdbClient client = client("en", url -> {
+            if (url.contains("/tv/22/season/0")) return """
+                    {"episodes":[{"episode_number":1,"name":"Special","overview":"Special overview","still_path":"/s0e1.jpg"}]}
+                    """;
+            if (url.contains("/tv/22/season/1")) return """
+                    {"episodes":[
+                      {"episode_number":1,"name":"Pilot","overview":"Pilot overview","still_path":"/s1e1.jpg"},
+                      {"episode_number":2,"name":"Second","overview":"Second overview","still_path":null}
+                    ]}
+                    """;
+            if (url.contains("/tv/22?")) return """
+                    {"seasons":[{"season_number":1},{"season_number":0}]}
+                    """;
+            throw new IllegalArgumentException("Unexpected URL: " + url);
+        });
+        TmdbProvider provider = new TmdbProvider(client);
+        Models.ShowItem show = new Models.ShowItem("tmdb:tv:22", "tv/22", "Demo Show", null, null, null, null, null, null, Models.ShowType.TV_SHOW, "tmdb-en");
+        List<Models.Episode> episodes = provider.episodes(show);
+        require(episodes.size() == 3, "episode count");
+        require(episodes.get(0).seasonNumber() == 0 && episodes.get(0).episodeNumber() == 1, "special sorted first");
+        require("tv/22/season/1/episode/2".equals(episodes.get(2).id()), "stable episode id");
+    }
+
+    private static void testSpanishIdentity() throws Exception {
+        TmdbClient client = client("es", url -> """
+                {"results":[{"id":77,"name":"Serie de prueba","first_air_date":"2026-02-01","vote_average":8.0,"poster_path":"/serie.jpg"}]}
+                """);
+        TmdbProvider provider = new TmdbProvider(client);
+        require("TMDb (ES)".equals(provider.name()), "Spanish provider name");
+        require("tmdb-es".equals(provider.id()), "Spanish provider id");
+        List<Models.ShowItem> shows = provider.tvShows(1);
+        require(shows.size() == 1 && "tmdb-es".equals(shows.get(0).sourceProviderId()), "Spanish source identity");
+    }
+
+    private static TmdbClient client(String language, UrlResponder responder) {
+        return new TmdbClient(language, () -> "fixture-key", (url, headers) -> responder.respond(url));
+    }
+
+    @FunctionalInterface
+    private interface UrlResponder {
+        String respond(String url);
+    }
+
+    private static void require(boolean value, String name) {
+        if (!value) throw new AssertionError("Failed: " + name);
+    }
+}
