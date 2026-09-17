@@ -21,6 +21,19 @@ public final class ExtractorFixtureTest {
         require(new VoeExtractor().supports("https://voe.sx/e/abc"), "voe host");
         require(new SaturnExtractor().supports("https://play.saturncdn.net/embed/123"), "saturn host");
         require(new VixcloudExtractor().supports("https://vixcloud.co/embed/123"), "vixcloud host");
+        require(new VixSrcExtractor().supports("https://vixsrc.to/api/movie/550?lang=en"), "vixsrc host");
+        VixSrcExtractor.StreamParams vix = VixSrcExtractor.parseStreamParams("""
+                <script>
+                window.video = { id: '12345', filename: 'demo' };
+                window.masterPlaylist = { 'token': 'abc-token', 'expires': '123456' };
+                const url = '/playlist/12345?b=1';
+                window.canPlayFHD = true;
+                </script>
+                """);
+        require("12345".equals(vix.videoId()), "vixsrc video id");
+        require("abc-token".equals(vix.token()), "vixsrc token");
+        require("123456".equals(vix.expires()), "vixsrc expiry");
+        require(vix.hasB() && vix.canPlayFhd(), "vixsrc flags");
         String saturnDec = SaturnExtractor.decodePayload(Base64.getEncoder().encodeToString(
                 new byte[] { (byte) ('h' ^ 'a'), (byte) ('t' ^ 's'), (byte) ('t' ^ 'a'), (byte) ('p' ^ 's') }), "as");
         require("http".equals(saturnDec), "saturn decode");

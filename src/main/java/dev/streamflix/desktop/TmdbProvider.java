@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 
-/** Metadata only. Registration and playback belong to later lanes. */
+/** TMDb metadata provider with desktop playback routes. */
 final class TmdbProvider implements Provider {
     private final TmdbClient client;
 
@@ -91,8 +91,26 @@ final class TmdbProvider implements Provider {
         return List.copyOf(sorted);
     }
 
-    @Override public List<Models.Server> servers(String providerItemId) {
-        return List.of(); // No playback/extractor integration in this lane.
+    @Override public List<Models.Server> servers(String providerItemId) throws TmdbException {
+        if (providerItemId == null || providerItemId.isBlank()) return List.of();
+        String lang = id().endsWith("es") ? "es" : "en";
+        if (providerItemId.matches("movie/[1-9][0-9]*")) {
+            String movieId = providerItemId.substring("movie/".length());
+            return List.of(new Models.Server(
+                    "vixsrc-" + providerItemId,
+                    "VixSrc",
+                    VixSrcExtractor.MAIN_URL + "/api/movie/" + movieId + "?lang=" + lang));
+        }
+        var episode = java.util.regex.Pattern.compile(
+                "tv/([1-9][0-9]*)/season/([0-9]+)/episode/([1-9][0-9]*)").matcher(providerItemId);
+        if (episode.matches()) {
+            return List.of(new Models.Server(
+                    "vixsrc-" + providerItemId,
+                    "VixSrc",
+                    VixSrcExtractor.MAIN_URL + "/api/tv/" + episode.group(1) + "/" + episode.group(2)
+                            + "/" + episode.group(3) + "?lang=" + lang));
+        }
+        throw new TmdbException("Invalid playback identifier.");
     }
 
     private static void checkPage(int page) {

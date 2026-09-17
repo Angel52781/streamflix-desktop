@@ -13,6 +13,7 @@ public final class TmdbFixtureTest {
         testMovieAndSearchMapping();
         testEpisodesAcrossSeasons();
         testSpanishIdentity();
+        testPlaybackServers();
         System.out.println("TmdbFixtureTest OK");
     }
 
@@ -98,6 +99,21 @@ public final class TmdbFixtureTest {
         require(episodes.size() == 3, "episode count");
         require(episodes.get(0).seasonNumber() == 0 && episodes.get(0).episodeNumber() == 1, "special sorted first");
         require("tv/22/season/1/episode/2".equals(episodes.get(2).id()), "stable episode id");
+    }
+
+    private static void testPlaybackServers() throws Exception {
+        TmdbProvider en = new TmdbProvider(client("en", url -> "{}"));
+        List<Models.Server> movie = en.servers("movie/550");
+        require(movie.size() == 1, "movie playback server count");
+        require("VixSrc".equals(movie.get(0).name()), "movie playback server name");
+        require(movie.get(0).src().equals("https://vixsrc.to/api/movie/550?lang=en"), "movie playback URL");
+
+        List<Models.Server> episode = en.servers("tv/1399/season/1/episode/2");
+        require(episode.size() == 1, "episode playback server count");
+        require(episode.get(0).src().equals("https://vixsrc.to/api/tv/1399/1/2?lang=en"), "episode playback URL");
+
+        TmdbProvider es = new TmdbProvider(client("es", url -> "{}"));
+        require(es.servers("movie/550").get(0).src().endsWith("?lang=es"), "Spanish playback language");
     }
 
     private static void testSpanishIdentity() throws Exception {
