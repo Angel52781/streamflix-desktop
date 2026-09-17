@@ -18,8 +18,28 @@ final class Models {
             Double rating,
             String poster,
             String banner,
-            ShowType type
-    ) {}
+            ShowType type,
+            String sourceProviderId
+    ) {
+        ShowItem(
+                String id,
+                String providerId,
+                String title,
+                String overview,
+                String released,
+                Integer runtimeMinutes,
+                Double rating,
+                String poster,
+                String banner,
+                ShowType type
+        ) {
+            this(id, providerId, title, overview, released, runtimeMinutes, rating, poster, banner, type, null);
+        }
+
+        ShowItem withSourceProviderId(String value) {
+            return new ShowItem(id, providerId, title, overview, released, runtimeMinutes, rating, poster, banner, type, value);
+        }
+    }
 
     record Episode(
             String id,

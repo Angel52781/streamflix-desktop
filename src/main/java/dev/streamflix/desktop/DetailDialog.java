@@ -44,7 +44,7 @@ final class DetailDialog extends JDialog {
 
         JButton favButton = Theme.button(UserData.isFavorite(provider.id(), item.id()) ? "\u2665 Quitar Favorito" : "\u2661 A\u00f1adir Favorito");
         favButton.addActionListener(e -> {
-            UserData.toggleFavorite(item);
+            UserData.toggleFavorite(provider.id(), item);
             favButton.setText(UserData.isFavorite(provider.id(), item.id()) ? "\u2665 Quitar Favorito" : "\u2661 A\u00f1adir Favorito");
         });
         right.add(favButton);
@@ -295,7 +295,7 @@ final class DetailDialog extends JDialog {
                 try {
                     ResolvedMedia resolved = get();
                     MpvPlayer.play(resolved.video(), mediaTitle);
-                    UserData.recordHistory(item);
+                    UserData.recordHistory(provider.id(), item);
                     status.setText("Reproduciendo \u2014 " + resolved.server().name());
                 } catch (Exception ex) {
                     Throwable cause = ex instanceof ExecutionException && ex.getCause() != null ? ex.getCause() : ex;
@@ -316,7 +316,7 @@ final class DetailDialog extends JDialog {
                 try {
                     Models.Video video = get();
                     MpvPlayer.play(video, mediaTitle);
-                    UserData.recordHistory(item);
+                    UserData.recordHistory(provider.id(), item);
                     status.setText("Reproduciendo \u2014 " + server.name());
                 } catch (ExecutionException ex) {
                     Throwable cause = ex.getCause();

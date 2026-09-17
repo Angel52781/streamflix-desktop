@@ -261,7 +261,7 @@ final class MainFrame extends JFrame {
     }
 
     private void openDetails(Models.ShowItem item) {
-        Provider itemProvider = ProviderRegistry.get(item.providerId());
+        Provider itemProvider = item.sourceProviderId() == null ? null : ProviderRegistry.get(item.sourceProviderId());
         if (itemProvider == null) itemProvider = provider;
         new DetailDialog(this, itemProvider, item).setVisible(true);
     }

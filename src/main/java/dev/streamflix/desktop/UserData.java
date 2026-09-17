@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
@@ -116,41 +117,47 @@ public class UserData {
         }
     }
 
-    public static boolean isFavorite(String providerId, String id) {
-        return favorites.stream().anyMatch(f -> f.providerId().equals(providerId) && f.id().equals(id));
+    public static boolean isFavorite(String sourceProviderId, String id) {
+        return favorites.stream().anyMatch(f -> sameSourceItem(f, sourceProviderId, id));
     }
 
-    public static void toggleFavorite(Models.ShowItem item) {
-        if (isFavorite(item.providerId(), item.id())) {
-            favorites.removeIf(f -> f.providerId().equals(item.providerId()) && f.id().equals(item.id()));
+    public static void toggleFavorite(String sourceProviderId, Models.ShowItem item) {
+        Objects.requireNonNull(sourceProviderId, "sourceProviderId");
+        Models.ShowItem stored = item.withSourceProviderId(sourceProviderId);
+        if (isFavorite(sourceProviderId, item.id())) {
+            favorites.removeIf(f -> sameSourceItem(f, sourceProviderId, item.id()));
         } else {
-            favorites.add(0, item);
+            favorites.add(0, stored);
         }
         saveFavorites();
     }
 
-    public static void recordHistory(Models.ShowItem item) {
-        recordHistory(item, 0.0, 0.0);
+    public static void recordHistory(String sourceProviderId, Models.ShowItem item) {
+        recordHistory(sourceProviderId, item, 0.0, 0.0);
     }
 
-    public static void recordHistory(Models.ShowItem item, double progress, double duration) {
+    public static void recordHistory(String sourceProviderId, Models.ShowItem item, double progress, double duration) {
+        Objects.requireNonNull(sourceProviderId, "sourceProviderId");
+        Models.ShowItem stored = item.withSourceProviderId(sourceProviderId);
         HistoryEntry existing = history.stream()
-                .filter(h -> h.show().providerId().equals(item.providerId()) && h.show().id().equals(item.id()))
+                .filter(h -> sameSourceItem(h.show(), sourceProviderId, item.id()))
                 .findFirst().orElse(null);
 
-        // rules: start future playback from the stored position only when progress is meaningful
-        // (> 30s and not near the end, e.g. 90%)
         if (existing != null && progress == 0.0 && duration == 0.0) {
             progress = existing.progressSeconds();
             duration = existing.durationSeconds();
         }
 
-        history.removeIf(h -> h.show().providerId().equals(item.providerId()) && h.show().id().equals(item.id()));
-        history.add(0, new HistoryEntry(item, System.currentTimeMillis(), progress, duration));
+        history.removeIf(h -> sameSourceItem(h.show(), sourceProviderId, item.id()));
+        history.add(0, new HistoryEntry(stored, System.currentTimeMillis(), progress, duration));
         while (history.size() > 100) {
             history.remove(history.size() - 1);
         }
         saveHistory();
+    }
+
+    private static boolean sameSourceItem(Models.ShowItem item, String sourceProviderId, String id) {
+        return Objects.equals(item.sourceProviderId(), sourceProviderId) && Objects.equals(item.id(), id);
     }
 
     public static List<Models.ShowItem> getFavorites() {
@@ -173,6 +180,9 @@ public class UserData {
         if (item.poster() != null) map.put("poster", item.poster());
         if (item.banner() != null) map.put("banner", item.banner());
         if (item.type() != null) map.put("type", item.type().name());
+        if (item.sourceProviderId() != null && !item.sourceProviderId().isBlank()) {
+            map.put("sourceProviderId", item.sourceProviderId());
+        }
         return map;
     }
 
@@ -198,7 +208,8 @@ public class UserData {
             Json.decimal(map.get("rating")),
             Json.string(map.get("poster")).isEmpty() ? null : Json.string(map.get("poster")),
             Json.string(map.get("banner")).isEmpty() ? null : Json.string(map.get("banner")),
-            type
+            type,
+            Json.string(map.get("sourceProviderId")).isEmpty() ? null : Json.string(map.get("sourceProviderId"))
         );
     }
 
@@ -231,9 +242,9 @@ public class UserData {
         loadHistory();
     }
 
-    static double getProgressForTest(Models.ShowItem item) {
+    static double getProgressForTest(String sourceProviderId, Models.ShowItem item) {
         HistoryEntry existing = history.stream()
-                .filter(h -> h.show().providerId().equals(item.providerId()) && h.show().id().equals(item.id()))
+                .filter(h -> sameSourceItem(h.show(), sourceProviderId, item.id()))
                 .findFirst().orElse(null);
         return existing != null ? existing.progressSeconds() : 0.0;
     }

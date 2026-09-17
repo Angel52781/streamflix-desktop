@@ -34,25 +34,25 @@ public final class UserDataTest {
     }
 
     private static void testProviderNamespacing() {
-        Models.ShowItem item1 = new Models.ShowItem("1", "p1", "Title", null, null, null, null, null, null, Models.ShowType.MOVIE);
-        Models.ShowItem item2 = new Models.ShowItem("1", "p2", "Title", null, null, null, null, null, null, Models.ShowType.MOVIE);
-        
-        UserData.toggleFavorite(item1);
-        UserData.toggleFavorite(item2);
-        
-        require(UserData.isFavorite("p1", "1"), "p1 should be favorite");
-        require(UserData.isFavorite("p2", "1"), "p2 should be favorite");
-        require(!UserData.isFavorite("p1", "2"), "p1/2 should not be favorite");
-        
-        UserData.toggleFavorite(item1);
-        require(!UserData.isFavorite("p1", "1"), "p1 should be toggled off");
-        require(UserData.isFavorite("p2", "1"), "p2 should still be favorite");
+        Models.ShowItem item1 = new Models.ShowItem("same-id", "remote-1", "Title A", null, null, null, null, null, null, Models.ShowType.MOVIE);
+        Models.ShowItem item2 = new Models.ShowItem("same-id", "remote-1", "Title B", null, null, null, null, null, null, Models.ShowType.MOVIE);
+
+        UserData.toggleFavorite("source-a", item1);
+        UserData.toggleFavorite("source-b", item2);
+
+        require(UserData.isFavorite("source-a", "same-id"), "source-a should be favorite");
+        require(UserData.isFavorite("source-b", "same-id"), "source-b should be favorite");
+        require(!UserData.isFavorite("source-a", "other-id"), "source-a/other-id should not be favorite");
+
+        UserData.toggleFavorite("source-a", item1);
+        require(!UserData.isFavorite("source-a", "same-id"), "source-a should be toggled off");
+        require(UserData.isFavorite("source-b", "same-id"), "source-b should still be favorite");
     }
 
     private static void testSerialization() {
         Models.ShowItem item = new Models.ShowItem("serial1", "prov1", "Some Title", "Overview here", "2024", 120, 8.5, "poster.jpg", "banner.jpg", Models.ShowType.TV_SHOW);
-        UserData.toggleFavorite(item);
-        
+        UserData.toggleFavorite("source-serialization", item);
+
         UserData.loadForTests();
         List<Models.ShowItem> favs = UserData.getFavorites();
         require(favs.size() == 1, "size == 1");
@@ -61,20 +61,21 @@ public final class UserDataTest {
         require("Some Title".equals(loaded.title()), "title match");
         require(Models.ShowType.TV_SHOW == loaded.type(), "type match");
         require(Integer.valueOf(120).equals(loaded.runtimeMinutes()), "runtime match");
+        require("source-serialization".equals(loaded.sourceProviderId()), "source provider match");
     }
 
     private static void testProgressRules() {
         Models.ShowItem item = new Models.ShowItem("prog1", "prov1", "Prog Title", null, null, null, null, null, null, Models.ShowType.MOVIE);
 
-        UserData.recordHistory(item);
+        UserData.recordHistory("source-progress", item);
         require(UserData.getHistory().size() == 1, "history size == 1");
 
-        UserData.recordHistory(item, 45.0, 300.0);
+        UserData.recordHistory("source-progress", item, 45.0, 300.0);
         require(UserData.getHistory().size() == 1, "history size still 1");
 
-        UserData.recordHistory(item);
+        UserData.recordHistory("source-progress", item);
 
-        double progress = UserData.getProgressForTest(item);
+        double progress = UserData.getProgressForTest("source-progress", item);
         require(progress == 45.0, "progress should not be overwritten by 0.0 updates. Was: " + progress);
     }
 
