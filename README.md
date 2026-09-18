@@ -16,6 +16,8 @@ Version: **1.3.5**
 
 The current stable release is **1.3.5**, adding GitHub-based updates, persistent image caching, diagnostics, hardened Continue Watching/resume behavior, explicit audio/subtitle preferences and a stabilized fullscreen player UI.
 
+Development **1.3.6** improves the pop-out player with work-area-aware sizing, resize/move/maximize controls, Pin/always-on-top and Mini modes, plus bilingual TMDb search fallback that merges ES/EN results by canonical TMDb ID.
+
 ### Core experience
 
 - Java 17-compatible JVM application with Swing + FlatLaf
@@ -27,7 +29,7 @@ The current stable release is **1.3.5**, adding GitHub-based updates, persistent
 - Unified TMDb catalog with **English (en-US)** or **Spanish (es-ES)** selected from Settings
 - TMDb API key or Read Access Token configured locally from Settings
 - High-resolution TMDb posters/backdrops with HiDPI-aware image rendering
-- Debounced global search, in-app title details, seasons, specials and episodes
+- Debounced global search with ES/EN TMDb fallback merging, in-app title details, seasons, specials and episodes
 - Visible horizontal season navigation
 - Streaming-style episode rows with stills, synopsis and playback progress
 - Continue Watching with persistent movie/episode progress and resume

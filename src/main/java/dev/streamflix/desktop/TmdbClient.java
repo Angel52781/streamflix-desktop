@@ -31,6 +31,10 @@ final class TmdbClient {
 
     String language() { return language; }
 
+    TmdbClient withLanguage(String alternateLanguage) {
+        return new TmdbClient(alternateLanguage, keys, transport);
+    }
+
     Map<String, Object> get(String path, Map<String, String> parameters) throws IOException, InterruptedException {
         if (!path.matches("(?:discover/(?:movie|tv)|search/multi|tv/[1-9][0-9]*(?:/season/[0-9]+)?)")) {
             throw new TmdbException("Invalid metadata request.");

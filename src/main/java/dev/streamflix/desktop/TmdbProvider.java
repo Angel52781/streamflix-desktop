@@ -54,8 +54,29 @@ final class TmdbProvider implements Provider {
     @Override public List<Models.ShowItem> search(String query, int page) throws Exception {
         checkPage(page);
         if (query == null || query.isBlank()) return List.of();
-        return mapListing(client.get("search/multi", Map.of("page", Integer.toString(page),
-                "query", query.strip(), "include_adult", "false")), null);
+
+        String cleaned = query.strip();
+        Map<String, String> parameters = Map.of(
+                "page", Integer.toString(page),
+                "query", cleaned,
+                "include_adult", "false");
+
+        LinkedHashMap<String, Models.ShowItem> merged = new LinkedHashMap<>();
+        for (Models.ShowItem item : mapListing(
+                client.get("search/multi", parameters), null)) {
+            merged.putIfAbsent(item.id(), item);
+        }
+
+        // TMDb says text search considers original/translated/alternative titles, but
+        // localization/indexing can still differ in practice. Merge the other UI
+        // language as a resilience fallback while keeping preferred-language items first.
+        String fallbackLanguage = client.language().startsWith("es") ? "en-US" : "es-ES";
+        TmdbClient fallback = client.withLanguage(fallbackLanguage);
+        for (Models.ShowItem item : mapListing(
+                fallback.get("search/multi", parameters), null)) {
+            merged.putIfAbsent(item.id(), item);
+        }
+        return List.copyOf(merged.values());
     }
 
     private List<Models.ShowItem> mapListing(Map<String, Object> root, String fixedType) throws TmdbException {

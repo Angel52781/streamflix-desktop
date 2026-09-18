@@ -41,6 +41,10 @@ final class EmbeddedPlayerWindow extends JFrame {
     private final JButton back10 = Theme.button("−10 s");
     private final JButton forward10 = Theme.button("+10 s");
     private final JButton mute = Theme.button("\uD83D\uDD0A");
+    private final JButton pinWindow = Theme.button("Pin");
+    private final JButton miniModeButton = Theme.button("Mini");
+    private final JButton minimizeWindow = Theme.button("—");
+    private final JButton maximizeWindow = Theme.button("□");
     private final JButton fullscreen = Theme.button("⛶");
 
     private final JSlider timeline = new JSlider(0, 1000, 0);
@@ -76,17 +80,33 @@ final class EmbeddedPlayerWindow extends JFrame {
     private boolean minimizedByApplication;
     private boolean restoreFullscreenAfterApplicationRestore;
     private Rectangle windowedBounds;
+    private Rectangle restoreWindowBounds;
+    private Rectangle preMiniBounds;
+    private boolean maximizedWindowed;
+    private boolean miniMode;
+    private boolean alwaysOnTopBeforeMini;
+    private Point moveStartScreen;
+    private Rectangle moveStartBounds;
+    private Point resizeStartScreen;
+    private Rectangle resizeStartBounds;
+    private int resizeEdges;
     private String currentHlsBitrateOverride;
+
+    private static final int RESIZE_NORTH = 1;
+    private static final int RESIZE_SOUTH = 2;
+    private static final int RESIZE_WEST = 4;
+    private static final int RESIZE_EAST = 8;
+    private static final int RESIZE_MARGIN = 8;
 
     private EmbeddedPlayerWindow(Window owner, String title) {
         super("Streamflix · " + title);
         this.appOwner = owner;
         setUndecorated(true);
+        setResizable(true);
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-        setMinimumSize(new Dimension(960, 620));
-        setSize(1320, 820);
-        setLocationRelativeTo(owner);
         setContentPane(buildUi());
+        configureInitialWindow(owner);
+        installWindowInteractions();
 
         mediaTitle.setText(title);
         qualityButton.setText("Calidad · " + PlaybackSettings.qualityLabel(PlaybackSettings.qualityProfile()));
@@ -150,6 +170,195 @@ final class EmbeddedPlayerWindow extends JFrame {
         });
     }
 
+    private void configureInitialWindow(Window owner) {
+        GraphicsConfiguration gc = owner != null && owner.getGraphicsConfiguration() != null
+                ? owner.getGraphicsConfiguration()
+                : getGraphicsConfiguration();
+        Rectangle work = usableWorkArea(gc);
+        Dimension minimum = normalMinimumSize(work);
+        setMinimumSize(minimum);
+
+        int width = Math.min(work.width,
+                Math.max(minimum.width, Math.min(1320, (int) Math.round(work.width * 0.90))));
+        int height = Math.min(work.height,
+                Math.max(minimum.height, Math.min(820, (int) Math.round(work.height * 0.88))));
+        setBounds(centeredBounds(work, width, height));
+    }
+
+    static Rectangle usableWorkArea(GraphicsConfiguration gc) {
+        GraphicsConfiguration actual = gc != null
+                ? gc
+                : GraphicsEnvironment.getLocalGraphicsEnvironment()
+                        .getDefaultScreenDevice().getDefaultConfiguration();
+        Rectangle bounds = new Rectangle(actual.getBounds());
+        try {
+            Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(actual);
+            bounds.x += insets.left;
+            bounds.y += insets.top;
+            bounds.width = Math.max(1, bounds.width - insets.left - insets.right);
+            bounds.height = Math.max(1, bounds.height - insets.top - insets.bottom);
+        } catch (RuntimeException ignored) {
+            // Fall back to the monitor bounds if platform insets are unavailable.
+        }
+        return bounds;
+    }
+
+    private static Dimension normalMinimumSize(Rectangle work) {
+        return new Dimension(
+                Math.max(1, Math.min(760, work.width)),
+                Math.max(1, Math.min(460, work.height)));
+    }
+
+    static Rectangle fitBoundsToWorkArea(Rectangle desired, Rectangle work, Dimension minimum) {
+        int minWidth = Math.min(Math.max(1, minimum.width), work.width);
+        int minHeight = Math.min(Math.max(1, minimum.height), work.height);
+        int width = Math.max(minWidth, Math.min(desired.width, work.width));
+        int height = Math.max(minHeight, Math.min(desired.height, work.height));
+        int x = Math.max(work.x, Math.min(desired.x, work.x + work.width - width));
+        int y = Math.max(work.y, Math.min(desired.y, work.y + work.height - height));
+        return new Rectangle(x, y, width, height);
+    }
+
+    private static Rectangle centeredBounds(Rectangle work, int width, int height) {
+        int w = Math.min(Math.max(1, width), work.width);
+        int h = Math.min(Math.max(1, height), work.height);
+        return new Rectangle(
+                work.x + Math.max(0, (work.width - w) / 2),
+                work.y + Math.max(0, (work.height - h) / 2),
+                w, h);
+    }
+
+    private void installWindowInteractions() {
+        MouseAdapter resizeAdapter = new MouseAdapter() {
+            @Override public void mouseMoved(MouseEvent e) {
+                if (fullScreen || maximizedWindowed) return;
+                int edges = resizeEdgesAt(e.getLocationOnScreen());
+                e.getComponent().setCursor(Cursor.getPredefinedCursor(cursorForEdges(edges)));
+            }
+
+            @Override public void mousePressed(MouseEvent e) {
+                if (fullScreen || maximizedWindowed || !SwingUtilities.isLeftMouseButton(e)) return;
+                int edges = resizeEdgesAt(e.getLocationOnScreen());
+                if (edges == 0) return;
+                resizeEdges = edges;
+                resizeStartScreen = e.getLocationOnScreen();
+                resizeStartBounds = getBounds();
+            }
+
+            @Override public void mouseDragged(MouseEvent e) {
+                if (resizeEdges == 0 || resizeStartScreen == null || resizeStartBounds == null) return;
+                resizeFrom(e.getLocationOnScreen());
+            }
+
+            @Override public void mouseReleased(MouseEvent e) {
+                resizeEdges = 0;
+                resizeStartScreen = null;
+                resizeStartBounds = null;
+            }
+        };
+        installMouseAdapterRecursively(getContentPane(), resizeAdapter);
+
+        MouseAdapter moveAdapter = new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent e) {
+                if (fullScreen || maximizedWindowed || !SwingUtilities.isLeftMouseButton(e)) return;
+                if (resizeEdgesAt(e.getLocationOnScreen()) != 0) return;
+                moveStartScreen = e.getLocationOnScreen();
+                moveStartBounds = getBounds();
+            }
+
+            @Override public void mouseDragged(MouseEvent e) {
+                if (moveStartScreen == null || moveStartBounds == null
+                        || resizeEdges != 0 || fullScreen || maximizedWindowed) return;
+                Point now = e.getLocationOnScreen();
+                Rectangle work = usableWorkArea(getGraphicsConfiguration());
+                Rectangle desired = new Rectangle(
+                        moveStartBounds.x + now.x - moveStartScreen.x,
+                        moveStartBounds.y + now.y - moveStartScreen.y,
+                        moveStartBounds.width,
+                        moveStartBounds.height);
+                setBounds(fitBoundsToWorkArea(desired, work, getMinimumSize()));
+            }
+
+            @Override public void mouseReleased(MouseEvent e) {
+                moveStartScreen = null;
+                moveStartBounds = null;
+            }
+
+            @Override public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e) && !fullScreen) {
+                    toggleWindowMaximized();
+                }
+            }
+        };
+        for (Component component : List.of(chromeTop, mediaTitle, serverLabel)) {
+            component.addMouseListener(moveAdapter);
+            component.addMouseMotionListener(moveAdapter);
+        }
+    }
+
+    private static void installMouseAdapterRecursively(Component component, MouseAdapter adapter) {
+        component.addMouseListener(adapter);
+        component.addMouseMotionListener(adapter);
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                installMouseAdapterRecursively(child, adapter);
+            }
+        }
+    }
+
+    private int resizeEdgesAt(Point screen) {
+        Rectangle bounds = getBounds();
+        int edges = 0;
+        if (Math.abs(screen.y - bounds.y) <= RESIZE_MARGIN) edges |= RESIZE_NORTH;
+        if (Math.abs(screen.y - (bounds.y + bounds.height)) <= RESIZE_MARGIN) edges |= RESIZE_SOUTH;
+        if (Math.abs(screen.x - bounds.x) <= RESIZE_MARGIN) edges |= RESIZE_WEST;
+        if (Math.abs(screen.x - (bounds.x + bounds.width)) <= RESIZE_MARGIN) edges |= RESIZE_EAST;
+        return edges;
+    }
+
+    private static int cursorForEdges(int edges) {
+        if ((edges & RESIZE_NORTH) != 0 && (edges & RESIZE_WEST) != 0) return Cursor.NW_RESIZE_CURSOR;
+        if ((edges & RESIZE_NORTH) != 0 && (edges & RESIZE_EAST) != 0) return Cursor.NE_RESIZE_CURSOR;
+        if ((edges & RESIZE_SOUTH) != 0 && (edges & RESIZE_WEST) != 0) return Cursor.SW_RESIZE_CURSOR;
+        if ((edges & RESIZE_SOUTH) != 0 && (edges & RESIZE_EAST) != 0) return Cursor.SE_RESIZE_CURSOR;
+        if ((edges & RESIZE_NORTH) != 0) return Cursor.N_RESIZE_CURSOR;
+        if ((edges & RESIZE_SOUTH) != 0) return Cursor.S_RESIZE_CURSOR;
+        if ((edges & RESIZE_WEST) != 0) return Cursor.W_RESIZE_CURSOR;
+        if ((edges & RESIZE_EAST) != 0) return Cursor.E_RESIZE_CURSOR;
+        return Cursor.DEFAULT_CURSOR;
+    }
+
+    private void resizeFrom(Point screen) {
+        Rectangle original = resizeStartBounds;
+        Rectangle work = usableWorkArea(getGraphicsConfiguration());
+        Dimension minimum = getMinimumSize();
+        int dx = screen.x - resizeStartScreen.x;
+        int dy = screen.y - resizeStartScreen.y;
+
+        int left = original.x;
+        int top = original.y;
+        int right = original.x + original.width;
+        int bottom = original.y + original.height;
+
+        if ((resizeEdges & RESIZE_WEST) != 0) {
+            left = Math.max(work.x,
+                    Math.min(original.x + dx, right - Math.min(minimum.width, work.width)));
+        }
+        if ((resizeEdges & RESIZE_EAST) != 0) {
+            right = Math.min(work.x + work.width,
+                    Math.max(original.x + Math.min(minimum.width, work.width), right + dx));
+        }
+        if ((resizeEdges & RESIZE_NORTH) != 0) {
+            top = Math.max(work.y,
+                    Math.min(original.y + dy, bottom - Math.min(minimum.height, work.height)));
+        }
+        if ((resizeEdges & RESIZE_SOUTH) != 0) {
+            bottom = Math.min(work.y + work.height,
+                    Math.max(original.y + Math.min(minimum.height, work.height), bottom + dy));
+        }
+        setBounds(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
+    }
+
     static EmbeddedPlayerWindow open(Window owner, String title) {
         if (!SwingUtilities.isEventDispatchThread()) {
             throw new IllegalStateException("El reproductor debe abrirse desde la UI.");
@@ -178,8 +387,11 @@ final class EmbeddedPlayerWindow extends JFrame {
             if (window == null || !window.isDisplayable() || window.closing) return;
 
             boolean iconified = (state & Frame.ICONIFIED) != 0;
-            if (iconified) window.minimizeWithApplication();
-            else window.restoreWithApplication();
+            if (iconified) {
+                if (!window.isAlwaysOnTop()) window.minimizeWithApplication();
+            } else {
+                window.restoreWithApplication();
+            }
         };
         if (SwingUtilities.isEventDispatchThread()) action.run();
         else SwingUtilities.invokeLater(action);
@@ -344,6 +556,16 @@ final class EmbeddedPlayerWindow extends JFrame {
 
         JPanel topActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         topActions.setOpaque(false);
+
+        miniModeButton.setToolTipText("Modo mini reproductor");
+        pinWindow.setToolTipText("Mantener siempre visible");
+        minimizeWindow.setToolTipText("Minimizar reproductor");
+        maximizeWindow.setToolTipText("Maximizar dentro del área útil de Windows");
+        for (JButton button : List.of(miniModeButton, pinWindow, minimizeWindow, maximizeWindow)) {
+            button.setPreferredSize(new Dimension(58, 36));
+            topActions.add(button);
+        }
+
         JButton close = Theme.button("←");
         close.setToolTipText("Volver a Streamflix (Esc)");
         close.setPreferredSize(new Dimension(42, 36));
@@ -425,10 +647,13 @@ final class EmbeddedPlayerWindow extends JFrame {
         root.addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent e) {
                 layoutPlayerLayers(root, mediaStage, chromeTop, chromeBottom);
+                updateResponsiveChrome(root.getWidth());
             }
         });
-        SwingUtilities.invokeLater(() ->
-                layoutPlayerLayers(root, mediaStage, chromeTop, chromeBottom));
+        SwingUtilities.invokeLater(() -> {
+            layoutPlayerLayers(root, mediaStage, chromeTop, chromeBottom);
+            updateResponsiveChrome(root.getWidth());
+        });
         return root;
     }
 
@@ -481,6 +706,10 @@ final class EmbeddedPlayerWindow extends JFrame {
         back10.addActionListener(e -> seek(-10));
         forward10.addActionListener(e -> seek(10));
         mute.addActionListener(e -> toggleMute());
+        pinWindow.addActionListener(e -> toggleAlwaysOnTopMode());
+        miniModeButton.addActionListener(e -> toggleMiniMode());
+        minimizeWindow.addActionListener(e -> setState(Frame.ICONIFIED));
+        maximizeWindow.addActionListener(e -> toggleWindowMaximized());
         fullscreen.addActionListener(e -> toggleFullscreen());
 
         timeline.addChangeListener(this::timelineChanged);
@@ -531,6 +760,111 @@ final class EmbeddedPlayerWindow extends JFrame {
     private void updateMuteButton(boolean muted) {
         mute.setText(muted ? "\uD83D\uDD07" : "\uD83D\uDD0A");
         mute.setToolTipText(muted ? "Activar sonido" : "Silenciar");
+    }
+
+    private void toggleAlwaysOnTopMode() {
+        setAlwaysOnTop(!isAlwaysOnTop());
+        updatePinButton();
+    }
+
+    private void updatePinButton() {
+        boolean pinned = isAlwaysOnTop();
+        pinWindow.setText(pinned ? "Fijado" : "Pin");
+        pinWindow.setToolTipText(pinned
+                ? "Dejar de mantener siempre visible"
+                : "Mantener siempre visible");
+    }
+
+    private void toggleWindowMaximized() {
+        if (fullScreen) return;
+        if (miniMode) toggleMiniMode();
+
+        Rectangle work = usableWorkArea(getGraphicsConfiguration());
+        if (!maximizedWindowed) {
+            restoreWindowBounds = getBounds();
+            setBounds(work);
+            maximizedWindowed = true;
+            maximizeWindow.setText("❐");
+            maximizeWindow.setToolTipText("Restaurar tamaño");
+        } else {
+            Rectangle target = restoreWindowBounds != null
+                    ? restoreWindowBounds
+                    : centeredBounds(work, Math.min(1320, work.width), Math.min(820, work.height));
+            setBounds(fitBoundsToWorkArea(target, work, normalMinimumSize(work)));
+            maximizedWindowed = false;
+            maximizeWindow.setText("□");
+            maximizeWindow.setToolTipText("Maximizar dentro del área útil de Windows");
+        }
+        updateResponsiveChrome(getContentPane().getWidth());
+    }
+
+    private void toggleMiniMode() {
+        if (fullScreen) toggleFullscreen();
+
+        Rectangle work = usableWorkArea(getGraphicsConfiguration());
+        if (!miniMode) {
+            preMiniBounds = getBounds();
+            alwaysOnTopBeforeMini = isAlwaysOnTop();
+            miniMode = true;
+            maximizedWindowed = false;
+            setAlwaysOnTop(true);
+            updatePinButton();
+
+            setMinimumSize(new Dimension(
+                    Math.min(420, work.width),
+                    Math.min(260, work.height)));
+            int width = Math.min(560, work.width);
+            int height = Math.min(340, work.height);
+            setBounds(new Rectangle(
+                    work.x + Math.max(0, work.width - width - 18),
+                    work.y + Math.max(0, work.height - height - 18),
+                    width, height));
+            miniModeButton.setText("Normal");
+            miniModeButton.setToolTipText("Volver al reproductor normal");
+        } else {
+            miniMode = false;
+            setAlwaysOnTop(alwaysOnTopBeforeMini);
+            updatePinButton();
+
+            Dimension minimum = normalMinimumSize(work);
+            setMinimumSize(minimum);
+            Rectangle target = preMiniBounds != null
+                    ? preMiniBounds
+                    : centeredBounds(work, Math.min(1320, work.width), Math.min(820, work.height));
+            setBounds(fitBoundsToWorkArea(target, work, minimum));
+            miniModeButton.setText("Mini");
+            miniModeButton.setToolTipText("Modo mini reproductor");
+        }
+        updateResponsiveChrome(getContentPane().getWidth());
+        videoSurface.requestFocusInWindow();
+    }
+
+    private void updateResponsiveChrome(int width) {
+        boolean mini = miniMode;
+        boolean compact = width < 980;
+
+        back10.setVisible(!mini && width >= 680);
+        forward10.setVisible(!mini && width >= 680);
+        volume.setVisible(!mini && width >= 820);
+        qualityButton.setVisible(!mini && width >= 920);
+        audioButton.setVisible(!mini && width >= 760);
+        subtitleButton.setVisible(!mini && width >= 760);
+        timeLabel.setVisible(width >= 500);
+
+        // Fullscreen, mute and play/pause remain available at every supported size.
+        fullscreen.setVisible(true);
+        mute.setVisible(true);
+        playPause.setVisible(true);
+
+        if (compact && !mini) {
+            miniModeButton.setPreferredSize(new Dimension(52, 36));
+            pinWindow.setPreferredSize(new Dimension(52, 36));
+        } else {
+            miniModeButton.setPreferredSize(new Dimension(58, 36));
+            pinWindow.setPreferredSize(new Dimension(58, 36));
+        }
+        chromeTop.revalidate();
+        chromeBottom.revalidate();
     }
 
     private void toggleFullscreen() {

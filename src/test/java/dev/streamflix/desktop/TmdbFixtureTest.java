@@ -13,6 +13,7 @@ public final class TmdbFixtureTest {
         testMissingKeyFailsBeforeTransport();
         testAuthenticationModes();
         testMovieAndSearchMapping();
+        testCrossLanguageSearchFallback();
         testGenreListing();
         testEpisodesAcrossSeasons();
         testSpanishIdentity();
@@ -129,6 +130,36 @@ public final class TmdbFixtureTest {
         require(search.size() == 2, "multi search filters people");
         require(search.get(0).type() == Models.ShowType.MOVIE, "search movie type");
         require(search.get(1).type() == Models.ShowType.TV_SHOW, "search tv type");
+    }
+
+    private static void testCrossLanguageSearchFallback() throws Exception {
+        TmdbClient client = client("es", url -> {
+            if (!url.contains("search/multi")) throw new IllegalArgumentException("Unexpected URL");
+            if (url.contains("language=es-ES")) {
+                return """
+                        {"results":[
+                          {"id":117581,"media_type":"tv","name":"Ginny y Georgia","first_air_date":"2021-02-24","vote_average":8.0}
+                        ]}
+                        """;
+            }
+            if (url.contains("language=en-US")) {
+                return """
+                        {"results":[
+                          {"id":117581,"media_type":"tv","name":"Ginny & Georgia","first_air_date":"2021-02-24","vote_average":8.0},
+                          {"id":999,"media_type":"tv","name":"English-only fallback","first_air_date":"2026-01-01","vote_average":7.0}
+                        ]}
+                        """;
+            }
+            throw new IllegalArgumentException("Missing language");
+        });
+        List<Models.ShowItem> results = new TmdbProvider(client).search("Ginny & Georgia", 1);
+        require(results.size() == 2, "cross-language search merge");
+        require("Ginny y Georgia".equals(results.get(0).title()),
+                "preferred-language result wins duplicate canonical id");
+        require("tmdb:tv:999".equals(results.get(1).id()),
+                "fallback-only result remains discoverable");
+        require("tmdb-es".equals(results.get(1).sourceProviderId()),
+                "fallback result stays attached to preferred provider");
     }
 
     private static void testGenreListing() throws Exception {
