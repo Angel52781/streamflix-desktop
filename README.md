@@ -1,90 +1,152 @@
 # Streamflix Desktop for Windows
 
-A Windows-oriented desktop port of the Streamflix Reborn architecture. The goal is functional parity with the Android app while replacing Android-only UI/player components with desktop equivalents.
+Streamflix Desktop is a Windows/JVM port of the Streamflix Reborn provider architecture. It keeps the provider/extractor model, replaces Android-only UI and player components with desktop implementations, and packages as a native Windows app image.
 
-## Current release
+## Current release candidate
 
-Implemented:
+Version: **1.2.0**
 
-- Windows/desktop Swing UI (no Android SDK required)
-- Movies and TV-series browsing through the FanPelis provider API
-- Search
-- Series seasons/episodes
-- Server discovery
-- Direct HLS/MP4 playback through bundled mpv
-- Native extraction for Filemoon, VOE, Streamtape, DoodStream and Goodstream
-- HTTP headers/cookies passed to mpv when required
-- Automatic server fallback plus browser fallback for unsupported hosts
-- Java 17-compatible build with a bundled runtime in the Windows app image
-- Windows `jpackage` app-image build script
+### Core experience
 
-Not yet at Android parity:
+- Java 17-compatible JVM application with Swing + FlatLaf
+- Cinematic desktop navigation with Home, Movies, Series, Live TV, Favorites and History
+- TMDb metadata catalogs in **English (en-US)** and **Spanish (es-ES)**
+- TMDb API key or Read Access Token configured locally from Settings
+- High-resolution TMDb posters/backdrops with HiDPI-aware image rendering
+- Search, details, seasons, specials and episodes
+- Visible horizontal season navigation
+- Streaming-style episode rows with stills and synopsis
+- Persistent favorites/history under %APPDATA%\\Streamflix
+- Atomic settings/userdata writes and test data-directory isolation
+- Progressive catalog loading while scrolling
 
-- Only the first provider (`FanPelis`) is wired into the desktop UI
-- Only direct streams + Filemoon have native extraction in this MVP
-- Other Streamflix providers/extractors still need systematic JVM ports
-- Android WebView/Cloudflare bypass flows still need a WebView2/JCEF desktop replacement
-- Supabase profile sync, favorites/history sync and Chromecast are not yet ported
+### Playback
 
-## Requirements
+- Bundled portable mpv as the playback engine
+- mpv video embedded inside Streamflix rather than exposing the external mpv UI
+- Real fullscreen acquisition on Windows
+- Loading state while extraction/player startup is in progress
+- Automatic server fallback based on playback startup, not extraction success alone
+- Manual server selection
+- Playback headers forwarded to mpv
+- Pause/resume, seek ±10 s, timeline, volume, audio-track and subtitle selection
+- Controls auto-hide in fullscreen
+- Spanish/English subtitle preference
+- TMDb playback currently certified through VixSrc for movies and episodes in EN/ES
 
-1. JDK 17 or newer (`java`, `javac`, `jar`, and optionally `jpackage` on PATH)
-2. [mpv](https://mpv.io/) for in-app playback
+### Catalog/provider inventory
 
-The build system searches for mpv in this order:
-1. `STREAMFLIX_MPV` environment variable
-2. `tools\mpv\mpv.exe` inside this project (use `setup-mpv.ps1` to download)
+Metadata / VOD:
 
-## Building on Windows
+- TMDb (EN)
+- TMDb (ES)
+- FanPelis
+- RidoMovies
+- PelisflixHD
+- AnimeWorld
+- Series Turcas
+- La Cartoons
+- AnimeSaturn
+- AnimeUnity
+- MEGAKino
 
-To build a standalone JAR (requires `lib` folder next to it):
-```powershell
-.\build.ps1 -JarOnly
-```
+Live TV:
 
-To build a Windows app image (includes bundled JRE and mpv):
-```powershell
-.\build.ps1
-```
-Output: `dist\StreamflixDesktop\StreamflixDesktop.exe`
+- IPTV Spain
+- IPTV All World
+- Pluto TV MX
+- Pluto TV ES
+- Pluto TV US
 
-To create a release ZIP with SHA-256:
-```powershell
-.\release.ps1
-```
+Third-party providers can change or disappear without notice. A provider is not considered permanently healthy merely because it worked in a previous release.
 
-## Linux/macOS development build
+## TMDb configuration
 
-```bash
-./build.sh
-./build.sh --run
-```
+Streamflix accepts either:
+
+1. STREAMFLIX_TMDB_API_KEY
+2. %APPDATA%\\Streamflix\\settings.json → tmdbApiKey
+
+The environment variable has precedence.
+
+One TMDb credential works for both TMDb EN and TMDb ES. No real API key is stored in the repository.
+
+## Build requirements
+
+- Windows
+- Complete JDK 17+ (java, javac, jar)
+- jpackage
+- mpv (tools\\mpv\\mpv.exe or STREAMFLIX_MPV)
+
+The build verifies locked dependencies before compilation.
+
+### Build the app image
+
+PowerShell:
+
+    .\\build.ps1
+
+Output:
+
+    dist\\StreamflixDesktop\\StreamflixDesktop.exe
+
+### Build JAR only
+
+    .\\build.ps1 -JarOnly
+
+### Create portable release ZIP + SHA-256
+
+    .\\release.ps1
+
+The release script builds from source, runs the packaged --self-test, creates the portable ZIP and writes its SHA-256 file.
+
+## Deterministic test gates
+
+The build currently runs:
+
+- JsonTest
+- ProviderFixtureTest
+- TmdbFixtureTest
+- M3uPlaylistTest
+- M3uLiveProviderTest
+- ExtractorFixtureTest
+- DependencySmokeTest
+- UserDataTest
+- MpvPlayerTest
+- PlaybackFallbackTest
+
+Additional opt-in live gates validate real third-party/network behavior and are intentionally not part of deterministic builds.
 
 ## Architecture
 
-```text
-Desktop UI (Swing)
-      |
-      v
-Provider interface
-      |
-      +-- FanpelisProvider
-      |
-      v
-Server / embed URL
-      |
-      v
-ExtractorRegistry
-      |-- Direct stream
-      |-- Filemoon
-      `-- Browser fallback
-      |
-      v
-mpv
-```
+    Swing desktop UI
+          |
+          +--> ProviderRegistry
+          |      |-- TMDb EN / ES
+          |      |-- VOD providers
+          |      \`-- M3U live providers
+          |
+          +--> Server discovery / fallback
+          |
+          +--> ExtractorRegistry
+          |
+          +--> mpv embedded window + JSON IPC
+          |
+          \`--> %APPDATA%\\Streamflix
+                 |-- settings.json
+                 |-- favorites.json
+                 \`-- history.json
 
-The important design decision is that providers/extractors are desktop-JVM code, independent of Android. Additional Streamflix providers can therefore be moved over incrementally instead of rewriting the application again.
+## Known limitations
 
-## Legal
+- TMDb has one certified playback route in this release candidate (VixSrc); additional independent TMDb playback routes remain desirable for resilience.
+- Some upstream providers rely on unstable public websites and may require maintenance after domain/HTML changes.
+- Chromecast/casting parity is not included in the Windows release.
+- Supabase/user-profile sync from Android is not included.
+- DRM/paywall bypass is intentionally out of scope.
 
-This software does not host media. It is provided for educational/personal use and as an interoperability experiment. Ensure you have the right to access any content you request through third-party providers.
+## Upstream and license
+
+This project derives/ports functionality from Streamflix Reborn and retains the applicable Apache 2.0 licensing/attribution. See LICENSE and THIRD_PARTY_NOTICES.md.
+
+The application does not host media. Users are responsible for ensuring they have the right to access content supplied by third-party sources.
