@@ -6,6 +6,9 @@ import java.util.Arrays;
 public final class App {
     public static void main(String[] args) {
         Runtime.getRuntime().addShutdownHook(new Thread(MpvPlayer::shutdown, "mpv-shutdown"));
+        if (Arrays.asList(args).contains("--live-self-test")) {
+            System.exit(SelfTest.runLive());
+        }
         if (Arrays.asList(args).contains("--self-test")) {
             System.exit(SelfTest.run());
         }

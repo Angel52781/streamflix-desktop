@@ -3,10 +3,20 @@ package dev.streamflix.desktop;
 import java.nio.file.*;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.*;
 
+/**
+ * Packaged application health checks.
+ *
+ * Deterministic mode is used by release.ps1 and never depends on third-party
+ * network availability. Live mode is opt-in and checks real providers with
+ * bounded time per provider.
+ */
 final class SelfTest {
     private static final Path REPORT = Path.of(
             System.getProperty("java.io.tmpdir"), "streamflix-desktop-selftest.txt");
+    private static final long PROVIDER_TIMEOUT_SECONDS = 55;
+
     private static final Map<String, String> SEARCH_QUERIES = Map.of(
             "FanPelis", "Patrol",
             "RidoMovies", "Hell",
@@ -25,32 +35,152 @@ final class SelfTest {
         StringBuilder report = new StringBuilder();
         try {
             Files.deleteIfExists(REPORT);
-            if (!MpvPlayer.isAvailable()) throw new IllegalStateException("mpv missing");
-            ExtractorRegistry registry = new ExtractorRegistry();
             report.append("SELF_TEST_OK\n")
-                    .append("time=").append(Instant.now()).append('\n')
-                    .append("mpv=OK\n");
+                    .append("mode=deterministic\n")
+                    .append("time=").append(Instant.now()).append('\n');
 
-            List<Provider> providers = ProviderRegistry.all();
-            int passed = 0;
-            for (Provider provider : providers) {
-                String result = testProvider(provider, registry);
-                report.append("provider=").append(provider.name())
-                        .append(' ').append(result).append('\n');
-                passed++;
-            }
-            report.append("providers=").append(passed).append('/').append(providers.size()).append('\n');
+            if (!MpvPlayer.isAvailable()) throw new IllegalStateException("mpv missing");
+            report.append("mpv=OK\n");
+
+            verifyRuntimeDependencies(report);
+            verifyProviders(report);
+            verifyPackagedVersion(report);
+
             writeReport(report.toString());
             System.out.print(report);
             return 0;
         } catch (Exception ex) {
-            String failed = "SELF_TEST_FAILED\n"
-                    + "time=" + Instant.now() + "\n"
-                    + "error=" + ex + "\n"
-                    + report;
-            writeReport(failed);
-            ex.printStackTrace(System.err);
-            return 1;
+            return fail(report, ex);
+        }
+    }
+
+    static int runLive() {
+        StringBuilder report = new StringBuilder();
+        try {
+            Files.deleteIfExists(REPORT);
+            if (!MpvPlayer.isAvailable()) throw new IllegalStateException("mpv missing");
+
+            ExtractorRegistry registry = new ExtractorRegistry();
+            List<Provider> providers = ProviderRegistry.all();
+
+            report.append("LIVE_SELF_TEST\n")
+                    .append("time=").append(Instant.now()).append('\n')
+                    .append("mpv=OK\n");
+
+            int passed = 0;
+            int failed = 0;
+            for (Provider provider : providers) {
+                System.out.println("Testing provider: " + provider.name());
+                try {
+                    String result = testProviderBounded(provider, registry);
+                    report.append("provider=").append(provider.name())
+                            .append(" OK ").append(result).append('\n');
+                    passed++;
+                } catch (Exception ex) {
+                    report.append("provider=").append(provider.name())
+                            .append(" FAIL ").append(compact(ex.toString())).append('\n');
+                    failed++;
+                } finally {
+                    try { MpvPlayer.stopCurrent(); } catch (Exception ignored) {}
+                }
+            }
+
+            report.append("providers_passed=").append(passed).append('/').append(providers.size()).append('\n')
+                    .append("providers_failed=").append(failed).append('/').append(providers.size()).append('\n');
+            writeReport(report.toString());
+            System.out.print(report);
+            return failed == 0 ? 0 : 2;
+        } catch (Exception ex) {
+            return fail(report, ex);
+        }
+    }
+
+    private static void verifyRuntimeDependencies(StringBuilder report) throws Exception {
+        String[] classes = {
+                "com.formdev.flatlaf.FlatDarkLaf",
+                "com.sun.jna.Native",
+                "org.jsoup.Jsoup",
+                "com.twelvemonkeys.imageio.plugins.webp.WebPImageReaderSpi"
+        };
+        for (String name : classes) {
+            Class.forName(name);
+            report.append("dependency=").append(name).append(" OK\n");
+        }
+    }
+
+    private static void verifyProviders(StringBuilder report) {
+        List<Provider> providers = ProviderRegistry.all();
+        if (providers.isEmpty()) throw new IllegalStateException("provider registry empty");
+
+        Set<String> ids = new HashSet<>();
+        for (Provider provider : providers) {
+            if (provider.id() == null || provider.id().isBlank()) {
+                throw new IllegalStateException("provider without id: " + provider.name());
+            }
+            if (!ids.add(provider.id())) {
+                throw new IllegalStateException("duplicate provider id: " + provider.id());
+            }
+            report.append("provider=").append(provider.id())
+                    .append(" name=").append(provider.name())
+                    .append(" movies=").append(provider.supportsMovies())
+                    .append(" tv=").append(provider.supportsTvShows())
+                    .append('\n');
+        }
+
+        requireProvider(ids, "tmdb-en");
+        requireProvider(ids, "tmdb-es");
+        requireProvider(ids, "iptv-spain");
+        requireProvider(ids, "pluto-es");
+        report.append("providers=").append(providers.size()).append(" OK\n");
+    }
+
+    private static void requireProvider(Set<String> ids, String id) {
+        if (!ids.contains(id)) throw new IllegalStateException("required provider missing: " + id);
+    }
+
+    private static void verifyPackagedVersion(StringBuilder report) throws Exception {
+        String implementation = App.class.getPackage().getImplementationVersion();
+        if (implementation == null || implementation.isBlank()) {
+            throw new IllegalStateException("Implementation-Version missing");
+        }
+        report.append("implementation_version=").append(implementation).append('\n');
+
+        String appPath = System.getProperty("jpackage.app-path");
+        if (appPath == null || appPath.isBlank()) {
+            report.append("packaged_version_file=SKIP non-jpackage runtime\n");
+            return;
+        }
+
+        Path appDir = Path.of(appPath).toAbsolutePath().getParent();
+        if (appDir == null) throw new IllegalStateException("jpackage app directory unavailable");
+        Path versionFile = appDir.resolve("VERSION");
+        if (!Files.isRegularFile(versionFile)) throw new IllegalStateException("packaged VERSION missing");
+        String packaged = Files.readString(versionFile).trim();
+        if (!implementation.equals(packaged)) {
+            throw new IllegalStateException("version mismatch: manifest=" + implementation + " file=" + packaged);
+        }
+        report.append("packaged_version_file=").append(packaged).append(" OK\n");
+    }
+
+    private static String testProviderBounded(Provider provider, ExtractorRegistry registry) throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+            Thread thread = new Thread(r, "selftest-" + provider.id());
+            thread.setDaemon(true);
+            return thread;
+        });
+        Future<String> future = executor.submit(() -> testProvider(provider, registry));
+        try {
+            return future.get(PROVIDER_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException ex) {
+            future.cancel(true);
+            throw new TimeoutException(provider.name() + ": timeout after "
+                    + PROVIDER_TIMEOUT_SECONDS + "s");
+        } catch (ExecutionException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof Exception exception) throw exception;
+            throw new RuntimeException(cause);
+        } finally {
+            executor.shutdownNow();
         }
     }
 
@@ -90,7 +220,9 @@ final class SelfTest {
                 throw seriesError;
             }
         }
-        if (playback == null) throw new IllegalStateException(provider.name() + ": no playable item", movieError);
+        if (playback == null) {
+            throw new IllegalStateException(provider.name() + ": no playable item", movieError);
+        }
 
         return "movies=" + movies.size() + " series=" + shows.size()
                 + " search=" + search.size() + " poster=" + posterStatus
@@ -101,12 +233,15 @@ final class SelfTest {
                                         ExtractorRegistry registry) throws Exception {
         Exception last = null;
         for (Models.ShowItem movie : movies.stream().limit(6).toList()) {
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
             try {
                 List<Models.Server> servers = provider.servers(movie.providerId());
                 if (servers.isEmpty()) continue;
                 String server = firstPlayable(servers, registry);
                 return "movie:" + compact(movie.title()) + " via " + server;
-            } catch (Exception ex) { last = ex; }
+            } catch (Exception ex) {
+                last = ex;
+            }
         }
         throw new IllegalStateException(provider.name() + ": no playable movie", last);
     }
@@ -115,17 +250,25 @@ final class SelfTest {
                                          ExtractorRegistry registry) throws Exception {
         Exception last = null;
         for (Models.ShowItem show : shows.stream().limit(6).toList()) {
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
             List<Models.Episode> episodes;
-            try { episodes = provider.episodes(show); }
-            catch (Exception ex) { last = ex; continue; }
+            try {
+                episodes = provider.episodes(show);
+            } catch (Exception ex) {
+                last = ex;
+                continue;
+            }
             for (Models.Episode episode : episodes.stream().limit(6).toList()) {
+                if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
                 try {
                     List<Models.Server> servers = provider.servers(episode.id());
                     if (servers.isEmpty()) continue;
                     String server = firstPlayable(servers, registry);
                     return "series:" + compact(show.title()) + " T" + episode.seasonNumber()
                             + "E" + episode.episodeNumber() + " via " + server;
-                } catch (Exception ex) { last = ex; }
+                } catch (Exception ex) {
+                    last = ex;
+                }
             }
         }
         throw new IllegalStateException(provider.name() + ": no playable series episode", last);
@@ -134,6 +277,7 @@ final class SelfTest {
     private static String firstPlayable(List<Models.Server> servers, ExtractorRegistry registry) throws Exception {
         Exception last = null;
         for (Models.Server server : servers) {
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
             try {
                 Models.Video video = registry.resolve(server);
                 int exit = MpvPlayer.smoke(video);
@@ -158,12 +302,23 @@ final class SelfTest {
     private static String compact(String value) {
         if (value == null) return "unknown";
         String text = value.replace('\n', ' ').replace('\r', ' ').trim();
-        return text.length() <= 50 ? text : text.substring(0, 47) + "...";
+        return text.length() <= 120 ? text : text.substring(0, 117) + "...";
+    }
+
+    private static int fail(StringBuilder report, Exception ex) {
+        String failed = "SELF_TEST_FAILED\n"
+                + "time=" + Instant.now() + "\n"
+                + "error=" + ex + "\n"
+                + report;
+        writeReport(failed);
+        ex.printStackTrace(System.err);
+        return 1;
     }
 
     private static void writeReport(String value) {
         try {
-            Files.writeString(REPORT, value, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.writeString(REPORT, value,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (Exception ignored) {}
     }
 }
