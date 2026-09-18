@@ -4,14 +4,10 @@ Set-Location $PSScriptRoot
 $target = Join-Path $PSScriptRoot "tools\mpv"
 $archive = Join-Path $target "mpv.7z"
 $partial = "$archive.part"
-$url = "https://sourceforge.net/projects/mpv-player-windows/files/64bit/mpv-x86_64-20260830-git-e8673660ab.7z/download"
+$url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260830/mpv-x86_64-20260830-git-e8673660ab.7z"
 $expectedSha256 = "464AB69B2248E7B592F0C27A927FFD1F016F7FA2D6D8B46B1A98254C5F2B670A"
-$sevenZip = "C:\Program Files\7-Zip\7z.exe"
 
 New-Item $target -ItemType Directory -Force | Out-Null
-if (-not (Test-Path $sevenZip)) {
-    throw "7-Zip is required to unpack mpv. Expected: $sevenZip"
-}
 
 function Test-ArchiveHash {
     param([string]$Path)
@@ -22,7 +18,7 @@ function Test-ArchiveHash {
 if (-not (Test-ArchiveHash $archive)) {
     Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
-    Write-Host "Downloading portable mpv..."
+    Write-Host "Downloading pinned mpv runtime..."
     try {
         & curl.exe --fail --location --retry 2 --silent --show-error --output $partial $url
         if ($LASTEXITCODE -ne 0) { throw "mpv download failed" }
@@ -40,9 +36,17 @@ if (-not (Test-ArchiveHash $archive)) {
 
 Remove-Item -LiteralPath (Join-Path $target "mpv.exe") -Force -ErrorAction SilentlyContinue
 Write-Host "Extracting mpv..."
-& $sevenZip x $archive "-o$target" -y | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "mpv extraction failed" }
-
+$tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+$sevenZip = "C:\Program Files\7-Zip\7z.exe"
+if ($tar) {
+    & $tar.Source -xf $archive -C $target
+    if ($LASTEXITCODE -ne 0) { throw "mpv extraction with tar.exe failed" }
+} elseif (Test-Path -LiteralPath $sevenZip) {
+    & $sevenZip x $archive "-o$target" -y | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "mpv extraction with 7-Zip failed" }
+} else {
+    throw "Neither tar.exe nor 7-Zip is available to unpack mpv."
+}
 $mpvExe = Join-Path $target "mpv.exe"
 if (-not (Test-Path -LiteralPath $mpvExe -PathType Leaf)) {
     throw "mpv.exe was not produced"

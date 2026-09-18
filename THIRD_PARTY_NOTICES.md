@@ -5,7 +5,7 @@ Streamflix Desktop is a desktop adaptation/port derived from ideas and portions 
 - **Streamflix Reborn** — https://github.com/streamflix-reborn2/streamflix
   - License: Apache License 2.0
 
-Bundled/runtime Java dependencies include:
+Third-party dependencies and runtime components include:
 
 - **JNA / JNA Platform 5.19.1**
   - License: Apache-2.0 OR LGPL-2.1-or-later
@@ -15,11 +15,12 @@ Bundled/runtime Java dependencies include:
   - License: MIT
 - **TwelveMonkeys ImageIO 3.12.0** (imageio-webp, core/metadata/common modules)
   - License: BSD
-- **mpv** (`e8673660ab` Windows build)
-  - Upstream: https://github.com/mpv-player/mpv/tree/e8673660ab
-  - Binary archive and pinned SHA-256 are documented in `third_party/mpv/SOURCE.txt`.
-  - Matching upstream `Copyright`, `LICENSE.GPL` and `LICENSE.LGPL` texts are shipped under `third_party/mpv/`.
-  - The effective obligations for the downloaded Windows binary can also depend on its build configuration and linked libraries; public binary redistribution requires verification of corresponding-source compliance.
+- **mpv** (`e8673660ab` Windows runtime)
+  - mpv source: https://github.com/mpv-player/mpv/tree/e8673660ab
+  - Windows build release: https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20260830
+  - The Streamflix public ZIP does **not** redistribute `mpv.exe`. On first Windows launch, Streamflix downloads the pinned upstream binary asset directly, verifies its SHA-256 and stores it under `%LOCALAPPDATA%\Streamflix\runtime\mpv`.
+  - Exact asset provenance and SHA-256 are documented in `third_party/mpv/SOURCE.txt`.
+  - Matching mpv `Copyright`, `LICENSE.GPL` and `LICENSE.LGPL` texts are retained under `third_party/mpv/` for attribution and transparency.
 
 The desktop port is not affiliated with the original Streamflix Reborn maintainers, TMDb, mpv, or third-party provider sites.
 

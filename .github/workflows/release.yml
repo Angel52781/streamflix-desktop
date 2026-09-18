@@ -26,14 +26,6 @@ jobs:
           if ($env:GITHUB_REF_NAME -ne $expectedTag) {
             throw "Tag $env:GITHUB_REF_NAME does not match VERSION $version"
           }
-      - name: Verify 7-Zip availability
-        shell: pwsh
-        run: |
-          $sevenZip = 'C:\Program Files\7-Zip\7z.exe'
-          if (-not (Test-Path $sevenZip)) {
-            throw "7-Zip not available at $sevenZip"
-          }
-
       - name: Prepare pinned mpv
         shell: pwsh
         run: .\setup-mpv.ps1

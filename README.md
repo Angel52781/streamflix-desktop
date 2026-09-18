@@ -6,7 +6,7 @@ Streamflix Desktop is a Windows/JVM port of the Streamflix Reborn provider archi
 
 **[Download the latest Streamflix Desktop build](https://github.com/Angel52781/streamflix-desktop/releases/latest/download/StreamflixDesktop-windows.zip)**
 
-Extract the ZIP and run `StreamflixDesktop.exe`. The portable package already includes the required Java runtime and mpv.
+Extract the ZIP and run `StreamflixDesktop.exe`. The portable package includes the Java runtime. On the first Windows launch, Streamflix downloads the pinned mpv runtime from its upstream GitHub release, verifies its SHA-256, and stores it under `%LOCALAPPDATA%\\Streamflix\\runtime\\mpv`.
 
 You can also browse versioned releases and checksums on the [GitHub Releases page](https://github.com/Angel52781/streamflix-desktop/releases).
 
@@ -22,7 +22,7 @@ The `main` branch currently contains **1.3.4**. Development is preparing **1.3.5
 - Cinematic desktop navigation with Home, Movies, Series, Live TV and Mi lista
 - Home discovery rails for Horror, Thriller, Drama and Comedy
 - Streaming-style rail navigation with visible previous/next controls and contextual horizontal wheel zones
-- "Ver mÃ¡s" actions route Home shelves into filtered Movie/Series catalogs
+- "Ver más" actions route Home shelves into filtered Movie/Series catalogs
 - Movie and Series catalog filters for popular content and genres
 - Unified TMDb catalog with **English (en-US)** or **Spanish (es-ES)** selected from Settings
 - TMDb API key or Read Access Token configured locally from Settings
@@ -40,7 +40,7 @@ The `main` branch currently contains **1.3.4**. Development is preparing **1.3.5
 
 ### Playback
 
-- Bundled portable mpv as the playback engine
+- mpv as the playback engine, provisioned once from a pinned upstream GitHub release with SHA-256 verification
 - mpv video embedded inside Streamflix rather than exposing the external mpv UI
 - Real fullscreen acquisition on Windows
 - Loading state while extraction/player startup is in progress
@@ -48,7 +48,7 @@ The `main` branch currently contains **1.3.4**. Development is preparing **1.3.5
 - Local server ranking learns which hosts start faster and fail less on this machine
 - Manual server selection
 - Playback headers forwarded to mpv
-- Pause/resume, seek Â±10 s, timeline, volume, audio-track and subtitle selection
+- Pause/resume, seek ±10 s, timeline, volume, audio-track and subtitle selection
 - Stable windowed player chrome; controls auto-hide only in fullscreen
 - Configurable quality: Automatic, Data Saver, Balanced, High and Maximum
 - Automatic HLS quality starts below mpv's maximum-bitrate default and can downgrade after sustained buffering
@@ -86,7 +86,7 @@ Third-party providers can change or disappear without notice. A provider is not 
 Streamflix accepts either:
 
 1. STREAMFLIX_TMDB_API_KEY
-2. %APPDATA%\\Streamflix\\settings.json â†’ tmdbApiKey
+2. %APPDATA%\\Streamflix\\settings.json → tmdbApiKey
 
 The environment variable has precedence.
 
@@ -99,9 +99,9 @@ Settings includes an in-app step-by-step TMDb setup guide with direct links and 
 - Windows
 - Complete JDK 17+ (java, javac, jar)
 - jpackage
-- mpv (tools\\mpv\\mpv.exe or STREAMFLIX_MPV)
+- mpv for local packaging/self-test (`tools\\mpv\\mpv.exe` or `STREAMFLIX_MPV`); `.\\setup-mpv.ps1` provisions the pinned build
 
-The build verifies locked dependencies before compilation.
+The build verifies locked dependencies before compilation. Public release ZIPs do **not** redistribute `mpv.exe`; `release.ps1` removes the build-time copy after the packaged self-test, and the application provisions mpv on first launch.
 
 ### Build the app image
 
@@ -141,6 +141,7 @@ The build currently runs:
 - UpdateServiceTest
 - ImageDiskCacheTest
 - DiagnosticsTest
+- MpvBootstrapTest
 
 Additional opt-in live gates validate real third-party/network behavior and are intentionally not part of deterministic builds.
 
@@ -168,7 +169,8 @@ Additional opt-in live gates validate real third-party/network behavior and are 
           |
           \`--> %LOCALAPPDATA%\\Streamflix
                  |-- cache\\images
-                 \`-- logs\\streamflix.log
+                 |-- logs\\streamflix.log
+                 \`-- runtime\\mpv
 
 ## Known limitations
 
@@ -177,6 +179,7 @@ Additional opt-in live gates validate real third-party/network behavior and are 
 - Chromecast/casting parity is not included in the Windows release.
 - Supabase/user-profile sync from Android is intentionally not included; the desktop app has no Streamflix login requirement.
 - The portable updater requires a normal writable portable installation and still needs a real public old-version → new-version end-to-end validation.
+- First playback setup requires network access to the pinned upstream mpv GitHub release; once provisioned, the runtime is reused from `%LOCALAPPDATA%`.
 - DRM/paywall bypass is intentionally out of scope.
 
 ## Upstream and license
