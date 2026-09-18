@@ -37,13 +37,17 @@ final class DetailDialog extends JDialog {
         getContentPane().setBackground(Theme.BG);
         setLayout(new BorderLayout());
         add(buildBody(), BorderLayout.CENTER);
+        installDismissBehavior(owner);
         if (item.type() == Models.ShowType.TV_SHOW) loadEpisodes();
     }
 
     private JComponent buildBody() {
+        JLayeredPane shell = new JLayeredPane();
+        shell.setOpaque(true);
+        shell.setBackground(Theme.BG);
+
         JPanel root = new JPanel(new BorderLayout());
         root.setBackground(Theme.BG);
-        root.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
 
         JPanel content = new JPanel();
         content.setBackground(Theme.BG);
@@ -73,7 +77,91 @@ final class DetailDialog extends JDialog {
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         root.add(scroll, BorderLayout.CENTER);
 
-        return root;
+        JButton close = createFixedCloseButton();
+        shell.add(root, Integer.valueOf(0));
+        shell.add(close, Integer.valueOf(100));
+
+        shell.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent e) {
+                layoutShell(shell, root, close);
+            }
+        });
+        SwingUtilities.invokeLater(() -> layoutShell(shell, root, close));
+
+        return shell;
+    }
+
+    private JButton createFixedCloseButton() {
+        JButton close = new JButton("×") {
+            private boolean hovered;
+
+            {
+                setFont(Theme.FONT.deriveFont(Font.PLAIN, 30f));
+                setForeground(Color.WHITE);
+                setBorderPainted(false);
+                setContentAreaFilled(false);
+                setFocusPainted(false);
+                setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                setToolTipText("Cerrar (Esc)");
+                addMouseListener(new java.awt.event.MouseAdapter() {
+                    @Override public void mouseEntered(java.awt.event.MouseEvent e) {
+                        hovered = true;
+                        repaint();
+                    }
+
+                    @Override public void mouseExited(java.awt.event.MouseEvent e) {
+                        hovered = false;
+                        repaint();
+                    }
+                });
+            }
+
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                try {
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2.setColor(hovered ? new Color(255, 255, 255, 46) : new Color(0, 0, 0, 150));
+                    g2.fillOval(2, 2, getWidth() - 4, getHeight() - 4);
+                } finally {
+                    g2.dispose();
+                }
+                super.paintComponent(g);
+            }
+        };
+        close.addActionListener(e -> dispose());
+        return close;
+    }
+
+    private static void layoutShell(JLayeredPane shell, Component content, Component close) {
+        int w = shell.getWidth();
+        int h = shell.getHeight();
+        content.setBounds(0, 0, w, h);
+        int size = 46;
+        close.setBounds(Math.max(12, w - size - 18), 16, size, size);
+    }
+
+    private void installDismissBehavior(Window owner) {
+        getRootPane().registerKeyboardAction(
+                e -> dispose(),
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0),
+                JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
+        getRootPane().registerKeyboardAction(
+                e -> dispose(),
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_LEFT,
+                        java.awt.event.InputEvent.ALT_DOWN_MASK),
+                JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
+
+        if (owner != null) {
+            addWindowFocusListener(new java.awt.event.WindowAdapter() {
+                @Override public void windowLostFocus(java.awt.event.WindowEvent e) {
+                    if (e.getOppositeWindow() == owner && isDisplayable()) {
+                        dispose();
+                    }
+                }
+            });
+        }
     }
 
     private JComponent buildHero() {
@@ -167,27 +255,22 @@ final class DetailDialog extends JDialog {
 
         hero.add(copy, Integer.valueOf(2));
 
-        JButton close = Theme.button("Cerrar");
-        close.addActionListener(e -> dispose());
-        hero.add(close, Integer.valueOf(3));
-
         hero.addComponentListener(new java.awt.event.ComponentAdapter() {
             @Override public void componentResized(java.awt.event.ComponentEvent e) {
-                layoutHero(hero, background, shade, copy, close);
+                layoutHero(hero, background, shade, copy);
             }
         });
-        SwingUtilities.invokeLater(() -> layoutHero(hero, background, shade, copy, close));
+        SwingUtilities.invokeLater(() -> layoutHero(hero, background, shade, copy));
         return hero;
     }
 
     private static void layoutHero(JLayeredPane hero, Component background, Component shade,
-                                   Component copy, Component close) {
+                                   Component copy) {
         int w = hero.getWidth();
         int h = hero.getHeight();
         background.setBounds(0, 0, w, h);
         shade.setBounds(0, 0, w, h);
         copy.setBounds(28, Math.max(42, h - 300), Math.min(760, Math.max(620, w - 120)), 275);
-        close.setBounds(Math.max(10, w - 100), 18, 78, 38);
     }
 
     private static String shorten(String value, int max) {
