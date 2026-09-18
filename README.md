@@ -16,7 +16,7 @@ Version: **1.3.5**
 
 The current stable release is **1.3.5**, adding GitHub-based updates, persistent image caching, diagnostics, hardened Continue Watching/resume behavior, explicit audio/subtitle preferences and a stabilized fullscreen player UI.
 
-Development **1.3.6** improves the pop-out player with work-area-aware sizing, resize/move/maximize controls, Pin/always-on-top and Mini modes, plus bilingual TMDb search fallback that merges ES/EN results by canonical TMDb ID.
+Development **1.3.6** improves the pop-out player with work-area-aware sizing, resize/move/maximize controls, Pin/always-on-top and Mini modes, plus scoped, focus-stable search and bilingual TMDb fallback that merges ES/EN results by canonical TMDb ID.
 
 ### Core experience
 

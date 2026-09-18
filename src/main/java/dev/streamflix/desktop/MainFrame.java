@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 final class MainFrame extends JFrame {
-    private enum Mode { HOME, MOVIES, SERIES, LIVE, SEARCH, FAVORITES }
+    enum Mode { HOME, MOVIES, SERIES, LIVE, SEARCH, FAVORITES }
 
     private final List<Provider> providers;
     private Provider provider;
@@ -44,6 +44,7 @@ final class MainFrame extends JFrame {
 
     private final List<Models.ShowItem> loadedItems = new ArrayList<>();
     private Mode mode = Mode.HOME;
+    private Mode searchScope = Mode.HOME;
     private int page = 1;
     private String query = "";
     private Integer catalogGenreId;
@@ -58,7 +59,7 @@ final class MainFrame extends JFrame {
         }
         this.providers = List.copyOf(providers);
         this.provider = preferredVodProvider(true);
-        this.searchDebounce = new Timer(350, e -> runSearch());
+        this.searchDebounce = new Timer(450, e -> runSearch());
         this.searchDebounce.setRepeats(false);
 
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
@@ -151,8 +152,19 @@ final class MainFrame extends JFrame {
         });
         search.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             private void changed() {
-                if (search.getText().trim().length() >= 2) searchDebounce.restart();
-                else searchDebounce.stop();
+                String text = search.getText().trim();
+                if (text.length() >= 2) {
+                    searchDebounce.restart();
+                } else {
+                    searchDebounce.stop();
+                    if (text.isEmpty() && mode == Mode.SEARCH) {
+                        SwingUtilities.invokeLater(() -> {
+                            if (mode == Mode.SEARCH && search.getText().trim().isEmpty()) {
+                                leaveSearch();
+                            }
+                        });
+                    }
+                }
             }
             @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { changed(); }
             @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { changed(); }
@@ -330,8 +342,18 @@ final class MainFrame extends JFrame {
         String q = search.getText().trim();
         if (q.isBlank()) return;
 
+        boolean keepSearchFocus = search.isFocusOwner();
+        Mode requestedScope = mode == Mode.SEARCH
+                ? searchScope
+                : normalizedSearchScope(mode);
+        searchScope = requestedScope;
+
         detailOpen = false;
-        provider = preferredVodProvider(true);
+        provider = switch (requestedScope) {
+            case SERIES -> preferredVodProvider(false);
+            case LIVE -> preferredLiveProvider();
+            default -> preferredVodProvider(true);
+        };
         mode = Mode.SEARCH;
         catalogGenreId = null;
         catalogGenreLabel = "Popular";
@@ -342,6 +364,46 @@ final class MainFrame extends JFrame {
         updateNavigationState();
         updateHeader();
         loadPage(false);
+
+        // Search runs in the background. Never steal keyboard focus from a user
+        // who is still typing while intermediate results are loading.
+        if (keepSearchFocus) {
+            SwingUtilities.invokeLater(() -> {
+                if (search.isDisplayable()) search.requestFocusInWindow();
+            });
+        }
+    }
+
+    private void leaveSearch() {
+        Mode target = searchScope;
+        if (target == Mode.MOVIES || target == Mode.SERIES) {
+            openCatalog(target, null, "Popular");
+        } else if (target == Mode.LIVE) {
+            switchMode(Mode.LIVE);
+        } else {
+            switchMode(Mode.HOME);
+        }
+    }
+
+    static Mode normalizedSearchScope(Mode source) {
+        return switch (source) {
+            case MOVIES, SERIES, LIVE -> source;
+            default -> Mode.HOME;
+        };
+    }
+
+    static List<Models.ShowItem> filterSearchResults(
+            List<Models.ShowItem> items, Mode scope) {
+        if (items == null || items.isEmpty()) return List.of();
+        return switch (scope) {
+            case MOVIES -> items.stream()
+                    .filter(item -> item.type() == Models.ShowType.MOVIE)
+                    .toList();
+            case SERIES -> items.stream()
+                    .filter(item -> item.type() == Models.ShowType.TV_SHOW)
+                    .toList();
+            default -> List.copyOf(items);
+        };
     }
 
     private void loadHome() {
@@ -690,6 +752,7 @@ final class MainFrame extends JFrame {
         Mode requestMode = mode;
         int requestPage = page;
         String requestQuery = query;
+        Mode requestSearchScope = searchScope;
         Integer requestGenreId = catalogGenreId;
 
         if (!append) loadedItems.clear();
@@ -715,7 +778,9 @@ final class MainFrame extends JFrame {
                             ? tmdb.tvShowsByGenre(requestGenreId, requestPage)
                             : requestProvider.tvShows(requestPage);
                     case LIVE -> requestProvider.tvShows(requestPage);
-                    case SEARCH -> requestProvider.search(requestQuery, requestPage);
+                    case SEARCH -> filterSearchResults(
+                            requestProvider.search(requestQuery, requestPage),
+                            requestSearchScope);
                     case FAVORITES -> UserData.getFavorites();
                     case HOME -> List.of();
                 };
@@ -882,8 +947,8 @@ final class MainFrame extends JFrame {
         } else if (mode == Mode.SERIES) {
             provider = preferredVodProvider(false);
             loadPage(false);
-        } else if (mode == Mode.SEARCH && !(provider instanceof M3uLiveProvider)) {
-            provider = preferredVodProvider(true);
+        } else if (mode == Mode.SEARCH && searchScope != Mode.LIVE) {
+            provider = preferredVodProvider(searchScope != Mode.SERIES);
             loadPage(false);
         }
     }
@@ -940,11 +1005,29 @@ final class MainFrame extends JFrame {
     }
 
     private void updateNavigationState() {
-        Theme.setNavSelected(homeButton, mode == Mode.HOME);
-        Theme.setNavSelected(moviesButton, mode == Mode.MOVIES || (mode == Mode.SEARCH && !(provider instanceof M3uLiveProvider)));
-        Theme.setNavSelected(seriesButton, mode == Mode.SERIES);
-        Theme.setNavSelected(liveButton, mode == Mode.LIVE || (mode == Mode.SEARCH && provider instanceof M3uLiveProvider));
+        boolean searching = mode == Mode.SEARCH;
+        Theme.setNavSelected(homeButton,
+                mode == Mode.HOME || (searching && searchScope == Mode.HOME));
+        Theme.setNavSelected(moviesButton,
+                mode == Mode.MOVIES || (searching && searchScope == Mode.MOVIES));
+        Theme.setNavSelected(seriesButton,
+                mode == Mode.SERIES || (searching && searchScope == Mode.SERIES));
+        Theme.setNavSelected(liveButton,
+                mode == Mode.LIVE || (searching && searchScope == Mode.LIVE));
         Theme.setNavSelected(favoritesButton, mode == Mode.FAVORITES);
+        updateSearchHint();
+    }
+
+    private void updateSearchHint() {
+        Mode scope = mode == Mode.SEARCH ? searchScope : normalizedSearchScope(mode);
+        String label = switch (scope) {
+            case MOVIES -> "Buscar películas";
+            case SERIES -> "Buscar series";
+            case LIVE -> "Buscar canales";
+            default -> "Buscar películas y series";
+        };
+        search.putClientProperty("JTextField.placeholderText", label);
+        search.setToolTipText(label + " · Ctrl+F");
     }
 
     private void openCatalog(Mode targetMode, Integer genreId, String genreLabel) {
@@ -1031,7 +1114,12 @@ final class MainFrame extends JFrame {
             case HOME -> "Películas, series y canales en un solo lugar";
             case FAVORITES -> "Títulos que guardaste";
             case LIVE -> "Canales en directo";
-            case SEARCH -> "Películas y series";
+            case SEARCH -> switch (searchScope) {
+                case MOVIES -> "Películas";
+                case SERIES -> "Series";
+                case LIVE -> "Canales en directo";
+                default -> "Películas y series";
+            };
             case MOVIES -> "Explora películas";
             case SERIES -> "Explora series";
             default -> "";
@@ -1051,7 +1139,9 @@ final class MainFrame extends JFrame {
         for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton, favoritesButton)) {
             button.setEnabled(!busy);
         }
-        search.setEnabled(!busy);
+        // Search is asynchronous: disabling this field steals keyboard focus
+        // halfway through typing as soon as the debounce starts a request.
+        search.setEnabled(true);
         resetButton.setEnabled(!busy && page > 1);
         if (busy) nextButton.setEnabled(false);
     }
@@ -1073,7 +1163,7 @@ final class MainFrame extends JFrame {
         actions.put("escape-search", new AbstractAction() {
             @Override public void actionPerformed(ActionEvent e) {
                 if (detailOpen) closeDetails();
-                else if (mode == Mode.SEARCH) switchMode(Mode.HOME);
+                else if (mode == Mode.SEARCH) leaveSearch();
                 else search.setText("");
             }
         });
