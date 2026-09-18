@@ -2,6 +2,7 @@ package dev.streamflix.desktop;
 
 import javax.imageio.ImageIO;
 import org.jsoup.Jsoup;
+import com.formdev.flatlaf.FlatDarkLaf;
 
 /** Runs against the built JAR, so its manifest must resolve sibling libraries. */
 public final class DependencySmokeTest {
@@ -11,6 +12,9 @@ public final class DependencySmokeTest {
         }
         if (!ImageIO.getImageReadersByFormatName("WebP").hasNext()) {
             throw new AssertionError("ImageIO WebP service unavailable");
+        }
+        if (FlatDarkLaf.class.getName().isBlank()) {
+            throw new AssertionError("FlatLaf unavailable");
         }
         System.out.println("DependencySmokeTest OK");
     }

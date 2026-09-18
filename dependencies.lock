@@ -1,4 +1,5 @@
 # Relative path under lib | SHA-256 | Maven Central URL
+ui/flatlaf-3.7.2.jar|917aff3963c88d797d0fd9b9ccbd70f7681c101df9d11c59e2bc7a3a6c0fabf4|https://repo.maven.apache.org/maven2/com/formdev/flatlaf/3.7.2/flatlaf-3.7.2.jar
 html/jsoup-1.19.1.jar|7b850eb00f2f77f606a343b2e4effe4107f3c1faa183729d85fbe16baf606096|https://repo.maven.apache.org/maven2/org/jsoup/jsoup/1.19.1/jsoup-1.19.1.jar
 imageio/imageio-webp-3.12.0.jar|43dc447ccfe34c5c5c6f5d31190270e1f9bf65f60375d697ae2a8ff433468526|https://repo.maven.apache.org/maven2/com/twelvemonkeys/imageio/imageio-webp/3.12.0/imageio-webp-3.12.0.jar
 imageio/imageio-core-3.12.0.jar|34c6f91bf3b217ed0115bce8283238fbd0264562aa682b4226a3960d0ede9815|https://repo.maven.apache.org/maven2/com/twelvemonkeys/imageio/imageio-core/3.12.0/imageio-core-3.12.0.jar

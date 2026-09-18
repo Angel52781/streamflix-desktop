@@ -1,5 +1,7 @@
 package dev.streamflix.desktop;
 
+import com.formdev.flatlaf.FlatDarkLaf;
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
@@ -24,7 +26,24 @@ final class Theme {
     private Theme() {}
 
     static void install() {
+        FlatDarkLaf.setup();
+
         UIManager.put("defaultFont", FONT);
+        UIManager.put("Component.arc", 12);
+        UIManager.put("Button.arc", 12);
+        UIManager.put("TextComponent.arc", 12);
+        UIManager.put("CheckBox.arc", 6);
+        UIManager.put("ProgressBar.arc", 12);
+        UIManager.put("Component.focusWidth", 1);
+        UIManager.put("Component.innerFocusWidth", 0);
+        UIManager.put("ScrollBar.width", 10);
+        UIManager.put("ScrollBar.thumbArc", 999);
+        UIManager.put("ScrollBar.trackArc", 999);
+        UIManager.put("ScrollBar.showButtons", false);
+        UIManager.put("TitlePane.unifiedBackground", true);
+        UIManager.put("TitlePane.menuBarEmbedded", true);
+        UIManager.put("List.selectionArc", 10);
+        UIManager.put("List.cellMargins", new Insets(5, 7, 5, 7));
         UIManager.put("Panel.background", BG);
         UIManager.put("Viewport.background", BG);
         UIManager.put("ScrollPane.background", BG);
@@ -39,8 +58,7 @@ final class Theme {
         UIManager.put("TextField.foreground", TEXT);
         UIManager.put("TextField.caretForeground", TEXT);
         UIManager.put("TextField.selectionBackground", ACCENT);
-        UIManager.put("TextField.border", BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER), new EmptyBorder(9, 12, 9, 12)));
+        UIManager.put("TextField.margin", new Insets(7, 10, 7, 10));
         UIManager.put("ComboBox.background", PANEL_ALT);
         UIManager.put("ComboBox.foreground", TEXT);
         UIManager.put("ComboBox.selectionBackground", HOVER);
