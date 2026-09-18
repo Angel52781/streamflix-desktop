@@ -2,7 +2,15 @@
 
 Streamflix Desktop is a Windows/JVM port of the Streamflix Reborn provider architecture. It keeps the provider/extractor model, replaces Android-only UI and player components with desktop implementations, and packages as a native Windows app image.
 
-## Current release candidate
+## Download for Windows
+
+**[Download the latest Streamflix Desktop build](https://github.com/Angel52781/streamflix-desktop/releases/latest/download/StreamflixDesktop-windows.zip)**
+
+Extract the ZIP and run `StreamflixDesktop.exe`. The portable package already includes the required Java runtime and mpv.
+
+You can also browse versioned releases and checksums on the [GitHub Releases page](https://github.com/Angel52781/streamflix-desktop/releases).
+
+## Current release
 
 Version: **1.2.0**
 
