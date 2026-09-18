@@ -4,7 +4,7 @@ Upstream reference reviewed: `streamflix-reborn2/streamflix` at commit `91b27174
 
 ## Current Windows state
 
-Development target: **1.3.5**. Public GitHub release at the time of this document: **1.2.0**.
+Current stable target and public GitHub release: **1.3.5**.
 
 | Area | Status | Notes |
 |---|---|---|
