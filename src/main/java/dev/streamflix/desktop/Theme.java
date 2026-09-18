@@ -197,6 +197,10 @@ final class Theme {
                     bg = hovered ? ACCENT_HOVER : ACCENT;
                 } else if (selectedState && navigation) {
                     bg = PANEL_ALT;
+                } else if (selectedState && !topNavigation) {
+                    bg = hovered
+                            ? new Color(ACCENT.getRed(), ACCENT.getGreen(), ACCENT.getBlue(), 84)
+                            : new Color(ACCENT.getRed(), ACCENT.getGreen(), ACCENT.getBlue(), 58);
                 } else if (hovered) {
                     bg = topNavigation ? new Color(255, 255, 255, 18) : HOVER;
                 } else {
@@ -207,7 +211,7 @@ final class Theme {
                     g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
                 }
                 if (!primary && !navigation && !topNavigation) {
-                    g2.setColor(BORDER);
+                    g2.setColor(selectedState ? ACCENT : BORDER);
                     g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
                 }
                 if (selectedState && navigation) {
