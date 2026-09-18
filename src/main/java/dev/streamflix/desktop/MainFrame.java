@@ -393,7 +393,7 @@ final class MainFrame extends JFrame {
                         .toList();
 
                 return new HomeData(
-                        history.stream().limit(10).toList(),
+                        history.stream().limit(8).toList(),
                         moviesFuture.join(),
                         seriesFuture.join(),
                         liveFuture.join(),
@@ -437,8 +437,7 @@ final class MainFrame extends JFrame {
         }
 
         if (!data.history().isEmpty()) {
-            homeRoot.add(homeSection(
-                    "Continuar viendo", "Retoma donde lo dejaste", data.history(), null));
+            homeRoot.add(continueWatchingSection(data.history()));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
@@ -484,6 +483,43 @@ final class MainFrame extends JFrame {
 
         homeRoot.revalidate();
         homeRoot.repaint();
+    }
+
+    private JComponent continueWatchingSection(List<Models.ShowItem> items) {
+        JPanel section = new JPanel(new BorderLayout(0, 12));
+        section.setOpaque(false);
+        section.setAlignmentX(Component.LEFT_ALIGNMENT);
+        section.setBorder(new EmptyBorder(0, 34, 0, 34));
+
+        JPanel heading = new JPanel();
+        heading.setOpaque(false);
+        heading.setLayout(new BoxLayout(heading, BoxLayout.Y_AXIS));
+        JLabel label = Theme.heading("Continuar viendo", 21f);
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel sub = Theme.muted("Retoma donde lo dejaste");
+        sub.setFont(Theme.FONT.deriveFont(12f));
+        sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+        heading.add(label);
+        heading.add(Box.createVerticalStrut(3));
+        heading.add(sub);
+        section.add(heading, BorderLayout.NORTH);
+
+        int count = Math.min(8, items.size());
+        int columns = Math.max(1, Math.min(4, count));
+        int rows = (count + columns - 1) / columns;
+
+        JPanel cards = new JPanel(new GridLayout(0, columns, 12, 12));
+        cards.setOpaque(false);
+        for (int i = 0; i < count; i++) cards.add(cardFor(items.get(i)));
+
+        JPanel cardsWrap = new JPanel(new BorderLayout());
+        cardsWrap.setOpaque(false);
+        cardsWrap.add(cards, BorderLayout.WEST);
+        section.add(cardsWrap, BorderLayout.CENTER);
+
+        int contentHeight = rows * 172 + Math.max(0, rows - 1) * 12;
+        section.setMaximumSize(new Dimension(Integer.MAX_VALUE, contentHeight + 64));
+        return section;
     }
 
     private JComponent homeSection(
@@ -565,28 +601,14 @@ final class MainFrame extends JFrame {
         MouseWheelListener railWheel = e -> {
             boolean canScrollHorizontally = horizontal.getMaximum() - horizontal.getMinimum()
                     > horizontal.getVisibleAmount();
-
             if (canScrollHorizontally) {
-                int min = horizontal.getMinimum();
-                int max = Math.max(min, horizontal.getMaximum() - horizontal.getVisibleAmount());
-                double rotation = e.getPreciseWheelRotation();
-                boolean towardStart = rotation < 0.0;
-                boolean towardEnd = rotation > 0.0;
-                boolean canMoveInDirection = (towardStart && horizontal.getValue() > min)
-                        || (towardEnd && horizontal.getValue() < max);
-
-                if (canMoveInDirection || e.isShiftDown()) {
-                    scrollBarBy(horizontal, rotation, 118);
-                } else {
-                    // At either end of the rail, keep the page from feeling trapped.
-                    scrollBarBy(homeScroll.getVerticalScrollBar(), rotation, 92);
-                }
-            } else {
-                scrollBarBy(homeScroll.getVerticalScrollBar(), e.getPreciseWheelRotation(), 92);
+                scrollBarBy(horizontal, e.getPreciseWheelRotation(), 118);
             }
+            // This listener exists only inside the card viewport. Headers, margins and
+            // every other Home area keep the normal vertical page wheel behavior.
             e.consume();
         };
-        installMouseWheelListenerRecursively(section, railWheel);
+        installMouseWheelListenerRecursively(scroll.getViewport(), railWheel);
 
         scroll.addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent e) {

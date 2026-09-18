@@ -12,9 +12,9 @@ You can also browse versioned releases and checksums on the [GitHub Releases pag
 
 ## Current stable release
 
-Version: **1.2.0**
+Version: **1.3.5**
 
-The current source tree is versioned **1.3.5**, focused on GitHub-based updates, persistent image caching, diagnostics and release hardening. The latest public GitHub release remains **1.2.0** until the next release is published.
+The current stable release is **1.3.5**, adding GitHub-based updates, persistent image caching, diagnostics, hardened Continue Watching/resume behavior, explicit audio/subtitle preferences and a stabilized fullscreen player UI.
 
 ### Core experience
 

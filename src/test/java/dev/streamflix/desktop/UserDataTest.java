@@ -23,6 +23,9 @@ public final class UserDataTest {
             testEpisodeProgressMetadata();
 
             setup();
+            testContinueWatchingDeduplicatesAndKeepsFurthestEpisode();
+
+            setup();
             testCorruptFilesDoNotPreventLoad(testDir);
 
             System.out.println("UserDataTest OK");
@@ -56,6 +59,11 @@ public final class UserDataTest {
         UserData.toggleFavorite("source-a", item1);
         require(!UserData.isFavorite("source-a", "same-id"), "source-a should be toggled off");
         require(UserData.isFavorite("source-b", "same-id"), "source-b should still be favorite");
+
+        UserData.recordHistory("source-a", item1, 10.0, 100.0);
+        UserData.recordHistory("source-b", item2, 20.0, 100.0);
+        require(UserData.getHistory().size() == 2,
+                "non-TMDb providers with the same item id remain namespaced");
     }
 
     private static void testSerialization() {
@@ -77,10 +85,13 @@ public final class UserDataTest {
         Models.ShowItem item = new Models.ShowItem("prog1", "prov1", "Prog Title", null, null, null, null, null, null, Models.ShowType.MOVIE);
 
         UserData.recordHistory("source-progress", item);
-        require(UserData.getHistory().size() == 1, "history size == 1");
+        require(UserData.getHistoryEntries().size() == 1, "raw history size == 1");
+        require(UserData.getHistory().isEmpty(),
+                "zero-progress item is not shown in Continue Watching");
 
         UserData.recordHistory("source-progress", item, 45.0, 300.0);
-        require(UserData.getHistory().size() == 1, "history size still 1");
+        require(UserData.getHistory().size() == 1,
+                "started item appears once in Continue Watching");
 
         UserData.recordHistory("source-progress", item);
 
@@ -99,6 +110,9 @@ public final class UserDataTest {
 
         UserData.HistoryEntry entry = UserData.getHistoryEntry("tmdb-en", show);
         require(entry != null, "episode history entry exists");
+        long originalTimestamp = entry.timestamp();
+        require(originalTimestamp > Integer.MAX_VALUE,
+                "history timestamp keeps millisecond precision before reload");
         require("tv/5920/season/2/episode/1".equals(entry.mediaId()), "episode media id persisted");
         require(Integer.valueOf(2).equals(entry.seasonNumber()), "season persisted");
         require(Integer.valueOf(1).equals(entry.episodeNumber()), "episode persisted");
@@ -111,6 +125,46 @@ public final class UserDataTest {
         require(reloaded != null, "episode history survives reload");
         require(Integer.valueOf(2).equals(reloaded.seasonNumber()), "season survives reload");
         require(Integer.valueOf(1).equals(reloaded.episodeNumber()), "episode survives reload");
+        require(reloaded.timestamp() == originalTimestamp,
+                "history timestamp must not truncate to 32-bit on reload");
+    }
+
+    private static void testContinueWatchingDeduplicatesAndKeepsFurthestEpisode() {
+        Models.ShowItem spanish = new Models.ShowItem(
+                "tmdb:tv:5920", "tv/5920", "El mentalista", null, null, null, null,
+                null, null, Models.ShowType.TV_SHOW);
+        Models.ShowItem english = new Models.ShowItem(
+                "tmdb:tv:5920", "tv/5920", "The Mentalist", null, null, null, null,
+                null, null, Models.ShowType.TV_SHOW);
+        Models.Episode episode2 = new Models.Episode(
+                "tv/5920/season/1/episode/2", 1, 2, "E2", null, null);
+        Models.Episode episode3 = new Models.Episode(
+                "tv/5920/season/1/episode/3", 1, 3, "E3", null, null);
+
+        UserData.recordEpisodeHistory("tmdb-en", english, episode3, 75.0, 2400.0);
+        UserData.recordEpisodeHistory("tmdb-es", spanish, episode2, 180.0, 2400.0);
+
+        require(UserData.getHistory().size() == 1,
+                "TMDb EN/ES must produce one Continue Watching card");
+        require("El mentalista".equals(UserData.getHistory().get(0).title()),
+                "Continue Watching uses current Spanish catalog representation");
+
+        UserData.HistoryEntry selected = UserData.getHistoryEntry("tmdb-es", spanish);
+        require(selected != null, "canonical continue entry exists");
+        require(Integer.valueOf(3).equals(selected.episodeNumber()),
+                "furthest started episode wins even if an earlier episode was watched later");
+        require(selected.progressSeconds() == 75.0,
+                "furthest episode keeps its own exact progress");
+
+        UserData.HistoryEntry earlier =
+                UserData.getEpisodeHistoryEntry("tmdb-en", english, episode2);
+        require(earlier != null && earlier.progressSeconds() == 180.0,
+                "per-episode progress is retained independently");
+
+        UserData.recordEpisodeHistory("tmdb-es", spanish, episode2, 220.0, 2400.0);
+        selected = UserData.getHistoryEntry("tmdb-en", english);
+        require(Integer.valueOf(3).equals(selected.episodeNumber()),
+                "revisiting an earlier episode must not demote Continue Watching");
     }
 
     private static void testCorruptFilesDoNotPreventLoad(Path testDir) throws Exception {

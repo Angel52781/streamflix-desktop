@@ -40,6 +40,7 @@ final class EmbeddedPlayerWindow extends JFrame {
     private final JButton playPause = Theme.primaryButton("Pausar");
     private final JButton back10 = Theme.button("−10 s");
     private final JButton forward10 = Theme.button("+10 s");
+    private final JButton mute = Theme.button("\uD83D\uDD0A");
     private final JButton fullscreen = Theme.button("⛶");
 
     private final JSlider timeline = new JSlider(0, 1000, 0);
@@ -264,22 +265,27 @@ final class EmbeddedPlayerWindow extends JFrame {
 
             waitUntilMediaReady(client, 30000);
 
-            if (resumeAtSeconds > 3.0) {
+            if (resumeAtSeconds > 1.0) {
                 client.command(List.of("seek", resumeAtSeconds, "absolute+exact"));
                 lastKnownTime = resumeAtSeconds;
             }
 
             try {
                 Object rawVolume = client.getProperty("volume");
+                Object rawMute = client.getProperty("mute");
+                boolean muted = rawMute instanceof Boolean b && b;
                 if (rawVolume instanceof Number n) {
                     SwingUtilities.invokeLater(() -> {
                         updatingVolume = true;
                         try {
                             volume.setValue((int) Math.round(n.doubleValue()));
+                            updateMuteButton(muted);
                         } finally {
                             updatingVolume = false;
                         }
                     });
+                } else {
+                    SwingUtilities.invokeLater(() -> updateMuteButton(muted));
                 }
             } catch (Exception ignored) {}
 
@@ -317,7 +323,8 @@ final class EmbeddedPlayerWindow extends JFrame {
     }
 
     private JComponent buildUi() {
-        JPanel root = new JPanel(new BorderLayout());
+        JLayeredPane root = new JLayeredPane();
+        root.setOpaque(true);
         root.setBackground(Color.BLACK);
         root.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
 
@@ -344,7 +351,7 @@ final class EmbeddedPlayerWindow extends JFrame {
         topActions.add(close);
         chromeTop.add(topActions, BorderLayout.EAST);
 
-        root.add(chromeTop, BorderLayout.NORTH);
+        root.add(chromeTop, Integer.valueOf(100));
 
         mediaStage.setBackground(Color.BLACK);
         mediaStage.add(buildLoadingStage(), CARD_LOADING);
@@ -354,7 +361,7 @@ final class EmbeddedPlayerWindow extends JFrame {
         videoWrap.add(videoSurface, BorderLayout.CENTER);
         mediaStage.add(videoWrap, CARD_VIDEO);
 
-        root.add(mediaStage, BorderLayout.CENTER);
+        root.add(mediaStage, Integer.valueOf(0));
 
         chromeBottom.setBackground(new Color(8, 10, 15));
         chromeBottom.setBorder(BorderFactory.createCompoundBorder(
@@ -384,6 +391,10 @@ final class EmbeddedPlayerWindow extends JFrame {
         left.add(forward10);
         left.add(Box.createHorizontalStrut(8));
 
+        mute.setToolTipText("Silenciar");
+        mute.setPreferredSize(new Dimension(42, 36));
+        left.add(mute);
+
         volume.setToolTipText("Volumen");
         volume.setPreferredSize(new Dimension(105, 30));
         volume.setOpaque(false);
@@ -409,8 +420,32 @@ final class EmbeddedPlayerWindow extends JFrame {
 
         chromeBottom.add(actions);
 
-        root.add(chromeBottom, BorderLayout.SOUTH);
+        root.add(chromeBottom, Integer.valueOf(100));
+
+        root.addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent e) {
+                layoutPlayerLayers(root, mediaStage, chromeTop, chromeBottom);
+            }
+        });
+        SwingUtilities.invokeLater(() ->
+                layoutPlayerLayers(root, mediaStage, chromeTop, chromeBottom));
         return root;
+    }
+
+    static void layoutPlayerLayers(
+            JLayeredPane root, JComponent media, JComponent top, JComponent bottom) {
+        int width = Math.max(0, root.getWidth());
+        int height = Math.max(0, root.getHeight());
+
+        // Player chrome is an overlay. Showing/hiding controls must never resize
+        // or reposition the native video Canvas underneath it.
+        media.setBounds(0, 0, width, height);
+
+        int topHeight = Math.max(0, top.getPreferredSize().height);
+        int bottomHeight = Math.max(0, bottom.getPreferredSize().height);
+        top.setBounds(0, 0, width, Math.min(height, topHeight));
+        bottom.setBounds(0, Math.max(0, height - bottomHeight),
+                width, Math.min(height, bottomHeight));
     }
 
     private JComponent buildLoadingStage() {
@@ -445,6 +480,7 @@ final class EmbeddedPlayerWindow extends JFrame {
         playPause.addActionListener(e -> togglePause());
         back10.addActionListener(e -> seek(-10));
         forward10.addActionListener(e -> seek(10));
+        mute.addActionListener(e -> toggleMute());
         fullscreen.addActionListener(e -> toggleFullscreen());
 
         timeline.addChangeListener(this::timelineChanged);
@@ -480,6 +516,21 @@ final class EmbeddedPlayerWindow extends JFrame {
 
     private void seek(int seconds) {
         runCommand(() -> requireIpc().command(List.of("seek", seconds, "relative+exact")));
+    }
+
+    private void toggleMute() {
+        runCommand(() -> {
+            Object raw = requireIpc().getProperty("mute");
+            boolean muted = raw instanceof Boolean b && b;
+            boolean next = !muted;
+            requireIpc().setProperty("mute", next);
+            SwingUtilities.invokeLater(() -> updateMuteButton(next));
+        });
+    }
+
+    private void updateMuteButton(boolean muted) {
+        mute.setText(muted ? "\uD83D\uDD07" : "\uD83D\uDD0A");
+        mute.setToolTipText(muted ? "Activar sonido" : "Silenciar");
     }
 
     private void toggleFullscreen() {
@@ -724,12 +775,20 @@ final class EmbeddedPlayerWindow extends JFrame {
     private void refreshTracks() {
         new SwingWorker<Tracks, Void>() {
             @Override protected Tracks doInBackground() throws Exception {
-                Object raw = requireIpc().getProperty("track-list");
-                if (!(raw instanceof List<?> list)) return new Tracks(List.of(), List.of());
+                List<?> list = List.of();
+                for (int attempt = 0; attempt < 15; attempt++) {
+                    Object raw = requireIpc().getProperty("track-list");
+                    if (raw instanceof List<?> candidate && !candidate.isEmpty()) {
+                        list = candidate;
+                        break;
+                    }
+                    Thread.sleep(100);
+                }
+                if (list.isEmpty()) return new Tracks(List.of(), List.of());
 
                 ArrayList<TrackOption> audio = new ArrayList<>();
                 ArrayList<TrackOption> subtitles = new ArrayList<>();
-                subtitles.add(new TrackOption(0, "Desactivados", false));
+                subtitles.add(new TrackOption(0, "Desactivados", "", "", false));
 
                 for (Object item : list) {
                     if (!(item instanceof Map<?, ?>)) continue;
@@ -743,10 +802,18 @@ final class EmbeddedPlayerWindow extends JFrame {
                     boolean selected = Boolean.TRUE.equals(track.get("selected"));
                     String label = trackLabel(lang, title, id);
 
-                    if ("audio".equals(type)) audio.add(new TrackOption(id, label, selected));
-                    else if ("sub".equals(type)) subtitles.add(new TrackOption(id, label, selected));
+                    if ("audio".equals(type)) {
+                        audio.add(new TrackOption(id, label, lang, title, selected));
+                    } else if ("sub".equals(type)) {
+                        subtitles.add(new TrackOption(id, label, lang, title, selected));
+                    }
                 }
-                return new Tracks(List.copyOf(audio), List.copyOf(subtitles));
+
+                List<TrackOption> preferredAudio = applyPreferredTrack(
+                        audio, false, PlaybackSettings.audioLanguage());
+                List<TrackOption> preferredSubtitles = applyPreferredTrack(
+                        subtitles, true, PlaybackSettings.subtitleLanguage());
+                return new Tracks(preferredAudio, preferredSubtitles);
             }
 
             @Override protected void done() {
@@ -754,9 +821,51 @@ final class EmbeddedPlayerWindow extends JFrame {
                     Tracks tracks = get();
                     populateTrackMenu(audioButton, audioMenu, tracks.audio(), false, "aid");
                     populateTrackMenu(subtitleButton, subtitleMenu, tracks.subtitles(), true, "sid");
-                } catch (Exception ignored) {}
+                } catch (Exception ex) {
+                    if (!closing) AppLog.warn("tracks", "No se pudieron preparar las pistas.", ex);
+                }
             }
         }.execute();
+    }
+
+    private List<TrackOption> applyPreferredTrack(
+            List<TrackOption> tracks, boolean subtitles, String preferred) throws Exception {
+        if (tracks == null || tracks.isEmpty()) return List.of();
+        if (!subtitles && "auto".equals(preferred)) return List.copyOf(tracks);
+
+        int selectedId = -1;
+        if (subtitles && "off".equals(preferred)) {
+            selectedId = 0;
+        } else {
+            TrackOption preferredTrack = tracks.stream()
+                    .filter(track -> track.id() != 0)
+                    .filter(track -> MediaLanguage.matches(track.language(), track.title(), preferred))
+                    .findFirst()
+                    .orElse(null);
+            if (preferredTrack != null) {
+                selectedId = preferredTrack.id();
+                AppLog.info("tracks",
+                        (subtitles ? "Subtítulos" : "Audio")
+                                + " preferidos " + preferred + " -> " + preferredTrack.label());
+            } else if (subtitles) {
+                // A requested subtitle language must never silently fall back to an
+                // unrelated language such as Italian. No matching language means off.
+                selectedId = 0;
+                AppLog.info("tracks",
+                        "Sin subtítulos " + preferred + " identificables; se desactivan.");
+            } else {
+                return List.copyOf(tracks);
+            }
+        }
+
+        String property = subtitles ? "sid" : "aid";
+        requireIpc().setProperty(property, subtitles && selectedId == 0 ? "no" : selectedId);
+        final int appliedId = selectedId;
+        return tracks.stream()
+                .map(track -> new TrackOption(
+                        track.id(), track.label(), track.language(), track.title(),
+                        track.id() == appliedId))
+                .toList();
     }
 
     private void populateTrackMenu(JButton button, JPopupMenu menu, List<TrackOption> tracks,
@@ -1020,7 +1129,8 @@ final class EmbeddedPlayerWindow extends JFrame {
         void run() throws Exception;
     }
 
-    private record TrackOption(int id, String label, boolean selected) {
+    private record TrackOption(
+            int id, String label, String language, String title, boolean selected) {
         @Override public String toString() { return label; }
     }
 

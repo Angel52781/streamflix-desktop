@@ -86,7 +86,8 @@ public class UserData {
                 for (Object o : list) {
                     Map<String, Object> map = Json.object(o);
                     Models.ShowItem item = deserializeShowItem(Json.object(map.get("show")));
-                    long timestamp = Json.integer(map.get("timestamp")) != null ? Json.integer(map.get("timestamp")).longValue() : 0L;
+                    Long timestampValue = longNumber(map.get("timestamp"));
+                    long timestamp = timestampValue != null ? timestampValue : 0L;
                     double progress = Json.decimal(map.get("progress")) != null ? Json.decimal(map.get("progress")) : 0.0;
                     double duration = Json.decimal(map.get("duration")) != null ? Json.decimal(map.get("duration")) : 0.0;
                     String mediaId = Json.string(map.get("mediaId"));
@@ -260,8 +261,13 @@ public class UserData {
                                       String mediaTitle, double progress, double duration) {
         Objects.requireNonNull(sourceProviderId, "sourceProviderId");
         Models.ShowItem stored = item.withSourceProviderId(sourceProviderId);
+        final String lookupMediaId = mediaId;
+        final Integer lookupSeasonNumber = seasonNumber;
+        final Integer lookupEpisodeNumber = episodeNumber;
         HistoryEntry existing = history.stream()
-                .filter(h -> sameSourceItem(h.show(), sourceProviderId, item.id()))
+                .filter(h -> sameHistoryMedia(
+                        h, sourceProviderId, item,
+                        lookupMediaId, lookupSeasonNumber, lookupEpisodeNumber))
                 .findFirst().orElse(null);
 
         if (existing != null && progress == 0.0 && duration == 0.0) {
@@ -273,7 +279,12 @@ public class UserData {
             if (mediaTitle == null) mediaTitle = existing.mediaTitle();
         }
 
-        history.removeIf(h -> sameSourceItem(h.show(), sourceProviderId, item.id()));
+        final String finalMediaId = mediaId;
+        final Integer finalSeasonNumber = seasonNumber;
+        final Integer finalEpisodeNumber = episodeNumber;
+        history.removeIf(h -> sameHistoryMedia(
+                h, sourceProviderId, item,
+                finalMediaId, finalSeasonNumber, finalEpisodeNumber));
         history.add(0, new HistoryEntry(
                 stored,
                 System.currentTimeMillis(),
@@ -284,7 +295,8 @@ public class UserData {
                 episodeNumber,
                 mediaTitle
         ));
-        while (history.size() > 100) {
+        // Episode-level history needs more room than the old one-entry-per-show model.
+        while (history.size() > 300) {
             history.remove(history.size() - 1);
         }
         saveHistory();
@@ -292,6 +304,111 @@ public class UserData {
 
     private static boolean sameSourceItem(Models.ShowItem item, String sourceProviderId, String id) {
         return Objects.equals(item.sourceProviderId(), sourceProviderId) && Objects.equals(item.id(), id);
+    }
+
+    private static String historyShowKey(Models.ShowItem item, String sourceProviderId) {
+        if (item == null) return "";
+        String id = item.id() == null ? "" : item.id();
+        // TMDb EN and ES are two metadata views of the same canonical title.
+        if (id.startsWith("tmdb:movie:") || id.startsWith("tmdb:tv:")) return id;
+        String source = sourceProviderId;
+        if ((source == null || source.isBlank()) && item.sourceProviderId() != null) {
+            source = item.sourceProviderId();
+        }
+        return (source == null ? "" : source) + "\u0000" + id;
+    }
+
+    private static boolean sameHistoryShow(
+            HistoryEntry entry, String sourceProviderId, Models.ShowItem item) {
+        return Objects.equals(
+                historyShowKey(entry.show(), entry.show().sourceProviderId()),
+                historyShowKey(item, sourceProviderId));
+    }
+
+    private static boolean sameHistoryMedia(
+            HistoryEntry entry, String sourceProviderId, Models.ShowItem item,
+            String mediaId, Integer seasonNumber, Integer episodeNumber) {
+        if (!sameHistoryShow(entry, sourceProviderId, item)) return false;
+        if (seasonNumber != null && episodeNumber != null) {
+            return Objects.equals(entry.seasonNumber(), seasonNumber)
+                    && Objects.equals(entry.episodeNumber(), episodeNumber);
+        }
+        if (mediaId != null && entry.mediaId() != null) {
+            return Objects.equals(entry.mediaId(), mediaId);
+        }
+        return entry.seasonNumber() == null && entry.episodeNumber() == null;
+    }
+
+    private static HistoryEntry selectContinueEntry(List<HistoryEntry> entries) {
+        HistoryEntry best = null;
+        for (HistoryEntry candidate : entries) {
+            if (best == null || compareContinue(candidate, best) > 0) best = candidate;
+        }
+        return best;
+    }
+
+    private static int compareContinue(HistoryEntry a, HistoryEntry b) {
+        boolean aEpisode = a.seasonNumber() != null && a.episodeNumber() != null;
+        boolean bEpisode = b.seasonNumber() != null && b.episodeNumber() != null;
+        if (aEpisode != bEpisode) return aEpisode ? 1 : -1;
+        if (aEpisode) {
+            int season = Integer.compare(a.seasonNumber(), b.seasonNumber());
+            if (season != 0) return season;
+            int episode = Integer.compare(a.episodeNumber(), b.episodeNumber());
+            if (episode != 0) return episode;
+        }
+        return Long.compare(a.timestamp(), b.timestamp());
+    }
+
+    private static List<HistoryEntry> continueWatchingEntries() {
+        Map<String, List<HistoryEntry>> grouped = new LinkedHashMap<>();
+        for (HistoryEntry entry : history) {
+            String key = historyShowKey(entry.show(), entry.show().sourceProviderId());
+            grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(entry);
+        }
+        List<HistoryEntry> out = new ArrayList<>();
+        for (List<HistoryEntry> group : grouped.values()) {
+            HistoryEntry selected = selectContinueEntry(group);
+            if (!isContinueWatchingCandidate(selected)) continue;
+
+            Models.ShowItem displayShow = preferredContinueShow(group, selected.show());
+            out.add(new HistoryEntry(
+                    displayShow,
+                    selected.timestamp(),
+                    selected.progressSeconds(),
+                    selected.durationSeconds(),
+                    selected.mediaId(),
+                    selected.seasonNumber(),
+                    selected.episodeNumber(),
+                    selected.mediaTitle()
+            ));
+        }
+        return out;
+    }
+
+    private static Models.ShowItem preferredContinueShow(
+            List<HistoryEntry> group, Models.ShowItem fallback) {
+        if (fallback == null || fallback.id() == null
+                || !(fallback.id().startsWith("tmdb:movie:")
+                || fallback.id().startsWith("tmdb:tv:"))) {
+            return fallback;
+        }
+
+        String preferredSource = "tmdb-" + TmdbSettings.catalogLanguage();
+        return group.stream()
+                .map(HistoryEntry::show)
+                .filter(Objects::nonNull)
+                .filter(show -> preferredSource.equals(show.sourceProviderId()))
+                .findFirst()
+                .orElse(fallback);
+    }
+
+    private static boolean isContinueWatchingCandidate(HistoryEntry entry) {
+        if (entry == null || entry.show() == null) return false;
+        String source = entry.show().sourceProviderId();
+        if (source == null || source.isBlank()) return false;
+        if (entry.durationSeconds() <= 0 || entry.progressSeconds() <= 1.0) return false;
+        return entry.progressSeconds() < entry.durationSeconds() * 0.95;
     }
 
     public static List<Models.ShowItem> getFavorites() {
@@ -311,7 +428,9 @@ public class UserData {
     }
 
     public static List<Models.ShowItem> getHistory() {
-        return history.stream().map(HistoryEntry::show).collect(Collectors.toList());
+        return continueWatchingEntries().stream()
+                .map(HistoryEntry::show)
+                .collect(Collectors.toList());
     }
 
     public static List<HistoryEntry> getHistoryEntries() {
@@ -320,16 +439,24 @@ public class UserData {
 
     public static HistoryEntry getHistoryEntry(String sourceProviderId, Models.ShowItem item) {
         if (sourceProviderId == null || item == null) return null;
+        List<HistoryEntry> matching = history.stream()
+                .filter(h -> sameHistoryShow(h, sourceProviderId, item))
+                .toList();
+        return selectContinueEntry(matching);
+    }
+
+    public static HistoryEntry getEpisodeHistoryEntry(
+            String sourceProviderId, Models.ShowItem item, Models.Episode episode) {
+        if (sourceProviderId == null || item == null || episode == null) return null;
         return history.stream()
-                .filter(h -> sameSourceItem(h.show(), sourceProviderId, item.id()))
+                .filter(h -> sameHistoryMedia(
+                        h, sourceProviderId, item, episode.id(),
+                        episode.seasonNumber(), episode.episodeNumber()))
                 .findFirst().orElse(null);
     }
 
     public static double progressFraction(String sourceProviderId, Models.ShowItem item) {
-        if (sourceProviderId == null || item == null) return 0.0;
-        HistoryEntry entry = history.stream()
-                .filter(h -> sameSourceItem(h.show(), sourceProviderId, item.id()))
-                .findFirst().orElse(null);
+        HistoryEntry entry = getHistoryEntry(sourceProviderId, item);
         if (entry == null || entry.durationSeconds() <= 0) return 0.0;
         double fraction = entry.progressSeconds() / entry.durationSeconds();
         if (!Double.isFinite(fraction)) return 0.0;
@@ -352,6 +479,12 @@ public class UserData {
             map.put("sourceProviderId", item.sourceProviderId());
         }
         return map;
+    }
+
+    private static Long longNumber(Object value) {
+        if (value instanceof Number number) return number.longValue();
+        try { return Long.valueOf(Json.string(value)); }
+        catch (Exception ignored) { return null; }
     }
 
     private static Models.ShowItem deserializeShowItem(Map<String, Object> map) {
@@ -411,9 +544,7 @@ public class UserData {
     }
 
     static double getProgressForTest(String sourceProviderId, Models.ShowItem item) {
-        HistoryEntry existing = history.stream()
-                .filter(h -> sameSourceItem(h.show(), sourceProviderId, item.id()))
-                .findFirst().orElse(null);
+        HistoryEntry existing = getHistoryEntry(sourceProviderId, item);
         return existing != null ? existing.progressSeconds() : 0.0;
     }
 }

@@ -178,10 +178,7 @@ final class TitleDetailView extends JPanel {
         actions.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         UserData.HistoryEntry historyEntry = UserData.getHistoryEntry(provider.id(), item);
-        boolean resumable = historyEntry != null
-                && historyEntry.progressSeconds() > 15
-                && historyEntry.durationSeconds() > 0
-                && historyEntry.progressSeconds() < historyEntry.durationSeconds() * 0.95;
+        boolean resumable = isResumablePosition(historyEntry);
 
         if (item.type() == Models.ShowType.MOVIE) {
             double resumeAt = resumable ? historyEntry.progressSeconds() : 0.0;
@@ -191,7 +188,7 @@ final class TitleDetailView extends JPanel {
             play.addActionListener(e -> chooseServerAndPlay(
                     item.providerId(), item.title(), true, null, resumeAt, null));
             actions.add(play);
-        } else if (resumable
+        } else if (historyEntry != null
                 && historyEntry.mediaId() != null
                 && historyEntry.seasonNumber() != null
                 && historyEntry.episodeNumber() != null) {
@@ -211,7 +208,7 @@ final class TitleDetailView extends JPanel {
                     historyEntry.mediaTitle() == null ? item.title() : historyEntry.mediaTitle(),
                     true,
                     resumeEpisode,
-                    historyEntry.progressSeconds(),
+                    resumable ? historyEntry.progressSeconds() : 0.0,
                     null
             ));
             actions.add(continueButton);
@@ -358,18 +355,18 @@ final class TitleDetailView extends JPanel {
 
         java.util.function.IntConsumer selectSeason = selectedSeason -> {
             rows.removeAll();
-            UserData.HistoryEntry historyEntry = UserData.getHistoryEntry(provider.id(), item);
 
             for (Models.Episode episode : seasons.getOrDefault(selectedSeason, List.of())) {
-                boolean currentEpisode = historyEntry != null
-                        && episode.id().equals(historyEntry.mediaId())
-                        && historyEntry.durationSeconds() > 0;
+                UserData.HistoryEntry episodeHistory =
+                        UserData.getEpisodeHistoryEntry(provider.id(), item, episode);
+                boolean currentEpisode = episodeHistory != null
+                        && episodeHistory.durationSeconds() > 0;
                 double episodeProgress = currentEpisode
                         ? Math.max(0.0, Math.min(1.0,
-                                historyEntry.progressSeconds() / historyEntry.durationSeconds()))
+                                episodeHistory.progressSeconds() / episodeHistory.durationSeconds()))
                         : 0.0;
-                double resumeAt = currentEpisode && episodeProgress < 0.95
-                        ? historyEntry.progressSeconds()
+                double resumeAt = isResumablePosition(episodeHistory)
+                        ? episodeHistory.progressSeconds()
                         : 0.0;
 
                 EpisodeRow row = new EpisodeRow(
@@ -411,7 +408,12 @@ final class TitleDetailView extends JPanel {
             seasonTabs.add(button);
         }
 
-        int initialSeason = seasons.containsKey(1) ? 1 : seasons.keySet().iterator().next();
+        UserData.HistoryEntry continueEntry = UserData.getHistoryEntry(provider.id(), item);
+        int initialSeason = continueEntry != null
+                && continueEntry.seasonNumber() != null
+                && seasons.containsKey(continueEntry.seasonNumber())
+                ? continueEntry.seasonNumber()
+                : seasons.containsKey(1) ? 1 : seasons.keySet().iterator().next();
         selectSeason.accept(initialSeason);
 
         episodeArea.revalidate();
@@ -595,16 +597,14 @@ final class TitleDetailView extends JPanel {
         Models.Episode target = null;
         double resumeAt = 0.0;
 
-        if (historyEntry != null
-                && historyEntry.mediaId() != null
-                && historyEntry.durationSeconds() > 0
-                && historyEntry.progressSeconds() > 15
-                && historyEntry.progressSeconds() < historyEntry.durationSeconds() * 0.95) {
+        if (historyEntry != null && historyEntry.mediaId() != null) {
             target = episodes.stream()
                     .filter(ep -> historyEntry.mediaId().equals(ep.id()))
                     .findFirst()
                     .orElse(null);
-            if (target != null) resumeAt = historyEntry.progressSeconds();
+            if (target != null && isResumablePosition(historyEntry)) {
+                resumeAt = historyEntry.progressSeconds();
+            }
         }
 
         if (target == null) {
@@ -642,6 +642,13 @@ final class TitleDetailView extends JPanel {
     private static long elapsedMillis(long startedAtNanos) {
         return Math.max(1L, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
                 System.nanoTime() - startedAtNanos));
+    }
+
+    private static boolean isResumablePosition(UserData.HistoryEntry entry) {
+        return entry != null
+                && entry.durationSeconds() > 0
+                && entry.progressSeconds() > 1.0
+                && entry.progressSeconds() < entry.durationSeconds() * 0.95;
     }
 
     private static String formatTime(double rawSeconds) {
