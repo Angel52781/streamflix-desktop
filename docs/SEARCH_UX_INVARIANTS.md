@@ -32,3 +32,29 @@ The preferred catalog language wins when the same title appears in both response
 Regression coverage:
 - MainFrameSearchTest
 - TmdbFixtureTest cross-language fallback
+
+## 5. Series search must tolerate TMDb prefix gaps
+
+TMDb's text search is not an autocomplete API and may return zero or irrelevant
+results for a valid title prefix (for example, `ginn` may miss `Ginny & Georgia`,
+and `sui` may miss `Suits`).
+
+For Series searches with at least three normalized characters, Streamflix uses
+TMDb's official daily TV-series ID export as a local prefix index. The compressed
+export is downloaded once per UTC day, cached under the local Streamflix cache,
+and scanned off the Swing UI thread. Only the best few canonical TMDb IDs are
+resolved through the normal localized API.
+
+Rules:
+- direct title prefixes outrank word-internal prefixes;
+- popularity breaks ties among equivalent prefixes;
+- preferred-language API metadata is still used for the displayed card;
+- the index is a fallback/ranking aid, never a replacement for canonical TMDb IDs;
+- index download/search failure must degrade to normal TMDb search rather than
+  break the search UI;
+- incremental empty results are presented as a non-final typing state; pressing
+  Enter confirms an exact search.
+
+Regression coverage:
+- TmdbTitleIndexTest
+- MainFrameSearchTest

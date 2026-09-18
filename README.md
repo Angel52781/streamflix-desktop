@@ -29,7 +29,7 @@ Development **1.3.6** improves the pop-out player with work-area-aware sizing, r
 - Unified TMDb catalog with **English (en-US)** or **Spanish (es-ES)** selected from Settings
 - TMDb API key or Read Access Token configured locally from Settings
 - High-resolution TMDb posters/backdrops with HiDPI-aware image rendering
-- Debounced global search with ES/EN TMDb fallback merging, in-app title details, seasons, specials and episodes
+- Scoped, focus-stable search with ES/EN TMDb fallback merging and a cached daily TV-title prefix index for partial Series queries
 - Visible horizontal season navigation
 - Streaming-style episode rows with stills, synopsis and playback progress
 - Continue Watching with persistent movie/episode progress and resume
@@ -132,6 +132,8 @@ The build currently runs:
 - JsonTest
 - ProviderFixtureTest
 - TmdbFixtureTest
+- TmdbTitleIndexTest
+- MainFrameSearchTest
 - M3uPlaylistTest
 - M3uLiveProviderTest
 - ExtractorFixtureTest

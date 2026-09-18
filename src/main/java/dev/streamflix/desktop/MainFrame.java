@@ -45,6 +45,7 @@ final class MainFrame extends JFrame {
     private final List<Models.ShowItem> loadedItems = new ArrayList<>();
     private Mode mode = Mode.HOME;
     private Mode searchScope = Mode.HOME;
+    private boolean searchExplicit = true;
     private int page = 1;
     private String query = "";
     private Integer catalogGenreId;
@@ -59,7 +60,7 @@ final class MainFrame extends JFrame {
         }
         this.providers = List.copyOf(providers);
         this.provider = preferredVodProvider(true);
-        this.searchDebounce = new Timer(450, e -> runSearch());
+        this.searchDebounce = new Timer(450, e -> runSearch(false));
         this.searchDebounce.setRepeats(false);
 
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
@@ -88,6 +89,7 @@ final class MainFrame extends JFrame {
         updateNavigationState();
         updateHeader();
         loadHome();
+        if (tmdbReady()) TmdbTitleIndex.warmUpTv();
     }
 
     @Override public void dispose() {
@@ -148,7 +150,7 @@ final class MainFrame extends JFrame {
         search.setToolTipText("Buscar películas y series · Ctrl+F");
         search.addActionListener(e -> {
             searchDebounce.stop();
-            runSearch();
+            runSearch(true);
         });
         search.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             private void changed() {
@@ -338,15 +340,17 @@ final class MainFrame extends JFrame {
         catch (TmdbException ignored) { return false; }
     }
 
-    private void runSearch() {
+    private void runSearch(boolean explicit) {
         String q = search.getText().trim();
         if (q.isBlank()) return;
 
         boolean keepSearchFocus = search.isFocusOwner();
-        Mode requestedScope = mode == Mode.SEARCH
+        boolean continuingSearch = mode == Mode.SEARCH;
+        Mode requestedScope = continuingSearch
                 ? searchScope
                 : normalizedSearchScope(mode);
         searchScope = requestedScope;
+        searchExplicit = explicit;
 
         detailOpen = false;
         provider = switch (requestedScope) {
@@ -360,7 +364,7 @@ final class MainFrame extends JFrame {
         query = q;
         page = 1;
         hasMore = true;
-        loadedItems.clear();
+        if (!continuingSearch) loadedItems.clear();
         updateNavigationState();
         updateHeader();
         loadPage(false);
@@ -753,9 +757,13 @@ final class MainFrame extends JFrame {
         int requestPage = page;
         String requestQuery = query;
         Mode requestSearchScope = searchScope;
+        boolean requestSearchExplicit = searchExplicit;
         Integer requestGenreId = catalogGenreId;
 
-        if (!append) loadedItems.clear();
+        boolean preserveSearchResults = !append
+                && requestMode == Mode.SEARCH
+                && !loadedItems.isEmpty();
+        if (!append && !preserveSearchResults) loadedItems.clear();
 
         if (requestProvider instanceof TmdbProvider && !tmdbReady()) {
             renderTmdbSetup();
@@ -764,9 +772,12 @@ final class MainFrame extends JFrame {
             return;
         }
 
-        if (append) status.setText("Cargando más…");
-        else setBusy(true, "Cargando…");
-        if (!append) renderLoading(requestProvider.name());
+        if (append) {
+            status.setText("Cargando más…");
+        } else {
+            setBusy(true, requestMode == Mode.SEARCH ? "Buscando…" : "Cargando…");
+        }
+        if (!append && !preserveSearchResults) renderLoading(requestProvider.name());
 
         activeWorker = new SwingWorker<List<Models.ShowItem>, Void>() {
             @Override protected List<Models.ShowItem> doInBackground() throws Exception {
@@ -778,9 +789,19 @@ final class MainFrame extends JFrame {
                             ? tmdb.tvShowsByGenre(requestGenreId, requestPage)
                             : requestProvider.tvShows(requestPage);
                     case LIVE -> requestProvider.tvShows(requestPage);
-                    case SEARCH -> filterSearchResults(
-                            requestProvider.search(requestQuery, requestPage),
-                            requestSearchScope);
+                    case SEARCH -> {
+                        List<Models.ShowItem> results;
+                        if (requestProvider instanceof TmdbProvider tmdb) {
+                            results = switch (requestSearchScope) {
+                                case MOVIES -> tmdb.searchMovies(requestQuery, requestPage);
+                                case SERIES -> tmdb.searchTv(requestQuery, requestPage);
+                                default -> tmdb.search(requestQuery, requestPage);
+                            };
+                        } else {
+                            results = requestProvider.search(requestQuery, requestPage);
+                        }
+                        yield filterSearchResults(results, requestSearchScope);
+                    }
                     case FAVORITES -> UserData.getFavorites();
                     case HOME -> List.of();
                 };
@@ -794,15 +815,31 @@ final class MainFrame extends JFrame {
                 try {
                     List<Models.ShowItem> items = get();
                     mergeLoaded(items, append);
-                    renderCatalog(loadedItems);
+
+                    boolean incrementalEmpty = requestMode == Mode.SEARCH
+                            && !requestSearchExplicit
+                            && loadedItems.isEmpty();
+                    if (incrementalEmpty) {
+                        renderGridState(
+                                "Sigue escribiendo",
+                                "La búsqueda incremental aún no encontró una coincidencia. "
+                                        + "Continúa escribiendo o pulsa Enter para buscar exactamente.",
+                                null,
+                                null);
+                    } else {
+                        renderCatalog(loadedItems);
+                    }
 
                     boolean paged = requestMode == Mode.MOVIES || requestMode == Mode.SERIES
                             || requestMode == Mode.LIVE || requestMode == Mode.SEARCH;
                     hasMore = paged && !items.isEmpty();
                     configurePaging(false, false);
                     pageLabel.setText(loadedItems.size() + " cargados");
-                    status.setText(loadedItems.isEmpty() ? "Sin resultados" : " ");
-                    if (!append) setBusy(false, status.getText());
+                    String resultStatus = incrementalEmpty
+                            ? "Sigue escribiendo para afinar"
+                            : loadedItems.isEmpty() ? "Sin resultados" : " ";
+                    status.setText(resultStatus);
+                    if (!append) setBusy(false, resultStatus);
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     if (append && !loadedItems.isEmpty()) {
@@ -937,6 +974,7 @@ final class MainFrame extends JFrame {
 
     private void openSettings() {
         new SettingsDialog(this).setVisible(true);
+        if (tmdbReady()) TmdbTitleIndex.warmUpTv();
 
         if (mode == Mode.HOME) {
             provider = preferredVodProvider(true);
