@@ -14,7 +14,7 @@ You can also browse versioned releases and checksums on the [GitHub Releases pag
 
 Version: **1.2.0**
 
-The `main` branch is currently preparing **1.3.4**, focused on smoother streaming-style rail navigation, clearer catalog filters and TMDb onboarding.
+The `main` branch currently contains **1.3.4**. Development is preparing **1.3.5**, focused on GitHub-based updates, persistent image caching, diagnostics and release hardening.
 
 ### Core experience
 
@@ -33,6 +33,9 @@ The `main` branch is currently preparing **1.3.4**, focused on smoother streamin
 - Continue Watching with persistent movie/episode progress and resume
 - Persistent Mi lista/history under %APPDATA%\\Streamflix
 - Atomic settings/userdata writes and test data-directory isolation
+- Persistent bounded image cache under `%LOCALAPPDATA%\\Streamflix\\cache\\images`
+- Local rotating diagnostics log with credential redaction
+- In-app GitHub Release checks with SHA-256 verified portable updates
 - Progressive catalog loading while scrolling
 
 ### Playback
@@ -118,7 +121,7 @@ Output:
 
     .\\release.ps1
 
-The release script builds from source, runs the packaged --self-test, creates the portable ZIP and writes its SHA-256 file.
+The release script builds from source, runs the packaged `--self-test`, and creates both versioned and stable-name ZIP/SHA-256 assets. The stable names (`StreamflixDesktop-windows.zip` and `.sha256`) are used by the latest-download link and in-app updater.
 
 ## Deterministic test gates
 
@@ -135,6 +138,9 @@ The build currently runs:
 - MpvPlayerTest
 - PlaybackFallbackTest
 - PlaybackServerStatsTest
+- UpdateServiceTest
+- ImageDiskCacheTest
+- DiagnosticsTest
 
 Additional opt-in live gates validate real third-party/network behavior and are intentionally not part of deterministic builds.
 
@@ -153,17 +159,24 @@ Additional opt-in live gates validate real third-party/network behavior and are 
           |
           +--> mpv embedded window + JSON IPC
           |
-          \`--> %APPDATA%\\Streamflix
-                 |-- settings.json
-                 |-- favorites.json
-                 \`-- history.json
+          +--> GitHub Releases updater + SHA-256 verification
+          |
+          +--> %APPDATA%\\Streamflix
+          |      |-- settings.json
+          |      |-- favorites.json
+          |      \`-- history.json
+          |
+          \`--> %LOCALAPPDATA%\\Streamflix
+                 |-- cache\\images
+                 \`-- logs\\streamflix.log
 
 ## Known limitations
 
 - TMDb has one certified playback route in this release candidate (VixSrc); additional independent TMDb playback routes remain desirable for resilience.
 - Some upstream providers rely on unstable public websites and may require maintenance after domain/HTML changes.
 - Chromecast/casting parity is not included in the Windows release.
-- Supabase/user-profile sync from Android is not included.
+- Supabase/user-profile sync from Android is intentionally not included; the desktop app has no Streamflix login requirement.
+- The portable updater requires a normal writable portable installation and still needs a real public old-version → new-version end-to-end validation.
 - DRM/paywall bypass is intentionally out of scope.
 
 ## Upstream and license

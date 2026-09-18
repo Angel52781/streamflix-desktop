@@ -15,8 +15,11 @@ Bundled/runtime Java dependencies include:
   - License: MIT
 - **TwelveMonkeys ImageIO 3.12.0** (imageio-webp, core/metadata/common modules)
   - License: BSD
-- **mpv**
-  - Distributed with its own applicable license/copyright material copied from the local mpv distribution during packaging.
+- **mpv** (`e8673660ab` Windows build)
+  - Upstream: https://github.com/mpv-player/mpv/tree/e8673660ab
+  - Binary archive and pinned SHA-256 are documented in `third_party/mpv/SOURCE.txt`.
+  - Matching upstream `Copyright`, `LICENSE.GPL` and `LICENSE.LGPL` texts are shipped under `third_party/mpv/`.
+  - The effective obligations for the downloaded Windows binary can also depend on its build configuration and linked libraries; public binary redistribution requires verification of corresponding-source compliance.
 
 The desktop port is not affiliated with the original Streamflix Reborn maintainers, TMDb, mpv, or third-party provider sites.
 
