@@ -63,6 +63,7 @@ final class MainFrame extends JFrame {
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) { MpvPlayer.shutdown(); }
         });
+        addWindowStateListener(e -> EmbeddedPlayerWindow.onApplicationStateChanged(e.getNewState()));
         setMinimumSize(new Dimension(1180, 720));
         setSize(1480, 900);
         setLocationRelativeTo(null);

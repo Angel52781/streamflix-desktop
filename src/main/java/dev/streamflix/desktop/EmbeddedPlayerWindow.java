@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Streamflix-owned video player. mpv remains the engine, but all visible chrome
  * and controls belong to Streamflix.
  */
-final class EmbeddedPlayerWindow extends JDialog {
+final class EmbeddedPlayerWindow extends JFrame {
     private static final String CARD_LOADING = "loading";
     private static final String CARD_VIDEO = "video";
     private static EmbeddedPlayerWindow activeWindow;
@@ -55,10 +55,14 @@ final class EmbeddedPlayerWindow extends JDialog {
     private volatile MpvIpcClient ipc;
     private volatile boolean closing;
     private volatile double durationSeconds;
+    private final Window appOwner;
     private boolean fullScreen;
+    private boolean minimizedByApplication;
+    private boolean restoreFullscreenAfterApplicationRestore;
 
     private EmbeddedPlayerWindow(Window owner, String title) {
-        super(owner, "Streamflix · " + title, ModalityType.MODELESS);
+        super("Streamflix · " + title);
+        this.appOwner = owner;
         setUndecorated(true);
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         setMinimumSize(new Dimension(960, 620));
@@ -135,6 +139,52 @@ final class EmbeddedPlayerWindow extends JDialog {
         window.toFront();
         window.videoSurface.requestFocusInWindow();
         return window;
+    }
+
+    static void onApplicationStateChanged(int state) {
+        Runnable action = () -> {
+            EmbeddedPlayerWindow window = activeWindow;
+            if (window == null || !window.isDisplayable() || window.closing) return;
+
+            boolean iconified = (state & Frame.ICONIFIED) != 0;
+            if (iconified) window.minimizeWithApplication();
+            else window.restoreWithApplication();
+        };
+        if (SwingUtilities.isEventDispatchThread()) action.run();
+        else SwingUtilities.invokeLater(action);
+    }
+
+    private void minimizeWithApplication() {
+        if (minimizedByApplication || !isDisplayable()) return;
+        minimizedByApplication = true;
+
+        if (fullScreen) {
+            GraphicsDevice device = getGraphicsConfiguration().getDevice();
+            if (device.getFullScreenWindow() == this) device.setFullScreenWindow(null);
+            fullScreen = false;
+            restoreFullscreenAfterApplicationRestore = true;
+            chromeHideTimer.stop();
+            chromeTop.setVisible(true);
+            chromeBottom.setVisible(true);
+            fullscreen.setText("Pantalla completa");
+        }
+
+        setState(Frame.ICONIFIED);
+    }
+
+    private void restoreWithApplication() {
+        if (!minimizedByApplication || !isDisplayable()) return;
+        minimizedByApplication = false;
+        setState(Frame.NORMAL);
+        setVisible(true);
+        toFront();
+
+        if (restoreFullscreenAfterApplicationRestore) {
+            restoreFullscreenAfterApplicationRestore = false;
+            SwingUtilities.invokeLater(this::toggleFullscreen);
+        } else {
+            videoSurface.requestFocusInWindow();
+        }
     }
 
     void setPreparing(String message) {
@@ -367,7 +417,7 @@ final class EmbeddedPlayerWindow extends JDialog {
             chromeTop.setVisible(true);
             chromeBottom.setVisible(true);
             setSize(1320, 820);
-            setLocationRelativeTo(getOwner());
+            setLocationRelativeTo(appOwner);
             fullscreen.setText("Pantalla completa");
         }
         videoSurface.requestFocusInWindow();

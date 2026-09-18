@@ -71,18 +71,23 @@ final class MpvPlayer {
     }
 
     synchronized void start(Models.Video video, String title, long requestId) throws Exception {
-        startCommand(video, requestId, playbackCommand(executable.get(), video, title));
+        startCommand(video, requestId, playbackCommand(executable.get(), video, title), startupMillis);
     }
 
     synchronized void startEmbedded(Models.Video video, String title, long requestId,
                                     long windowId, String ipcPath) throws Exception {
         if (windowId == 0L) throw new IllegalArgumentException("Ventana de video no disponible.");
         if (ipcPath == null || ipcPath.isBlank()) throw new IllegalArgumentException("Canal IPC no disponible.");
+        // IPC connection is the real startup proof for the embedded player. A long
+        // process-survival guard here only adds latency before we can even connect.
+        long embeddedGuardMillis = Math.min(startupMillis, 300L);
         startCommand(video, requestId,
-                embeddedPlaybackCommand(executable.get(), video, title, windowId, ipcPath));
+                embeddedPlaybackCommand(executable.get(), video, title, windowId, ipcPath),
+                embeddedGuardMillis);
     }
 
-    private void startCommand(Models.Video video, long requestId, List<String> command) throws Exception {
+    private void startCommand(Models.Video video, long requestId, List<String> command,
+                              long guardMillis) throws Exception {
         checkRequest(requestId);
         if (video == null || video.source() == null || video.source().isBlank()) {
             throw new IllegalArgumentException("El servidor no devolvi\u00f3 un video reproducible.");
@@ -93,7 +98,7 @@ final class MpvPlayer {
         try {
             // Extraction alone is not success. A surviving process counts as started;
             // an early clean exit (e.g. the user closed mpv) must not trigger fallback.
-            if (active.waitFor(startupMillis, TimeUnit.MILLISECONDS) || !active.isAlive()) {
+            if (active.waitFor(guardMillis, TimeUnit.MILLISECONDS) || !active.isAlive()) {
                 int exit = active.exitValue();
                 active = null;
                 if (exit != 0) throw new IOException("mpv no pudo iniciar la reproducci\u00f3n.");
