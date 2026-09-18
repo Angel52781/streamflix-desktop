@@ -4,20 +4,34 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-/** Streaming-style episode row with still image, synopsis and explicit actions. */
+/** Streaming-style episode row with still image, synopsis, progress and explicit actions. */
 final class EpisodeRow extends JPanel {
+    private final double progress;
+    private boolean hovered;
+
     EpisodeRow(Models.Episode episode,
                Consumer<Models.Episode> onPlay,
-               Consumer<Models.Episode> onServer) {
+               BiConsumer<Models.Episode, Component> onServer) {
+        this(episode, onPlay, onServer, 0.0);
+    }
+
+    EpisodeRow(Models.Episode episode,
+               Consumer<Models.Episode> onPlay,
+               BiConsumer<Models.Episode, Component> onServer,
+               double progress) {
+        this.progress = Math.max(0.0, Math.min(1.0, progress));
+
         setLayout(new BorderLayout(16, 0));
-        setBackground(new Color(16, 19, 26));
+        setOpaque(false);
         setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Theme.BORDER),
                 new EmptyBorder(10, 10, 10, 12)));
         setMaximumSize(new Dimension(Integer.MAX_VALUE, 126));
         setPreferredSize(new Dimension(760, 126));
+        setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         ArtworkPanel still = new ArtworkPanel(episode.poster());
         still.setPreferredSize(new Dimension(176, 99));
@@ -51,13 +65,15 @@ final class EpisodeRow extends JPanel {
         actions.setOpaque(false);
         actions.setLayout(new BoxLayout(actions, BoxLayout.Y_AXIS));
 
-        JButton play = Theme.primaryButton("Reproducir");
+        JButton play = Theme.primaryButton(this.progress > 0.02 && this.progress < 0.995
+                ? "Continuar"
+                : "Reproducir");
         play.setAlignmentX(Component.CENTER_ALIGNMENT);
         play.addActionListener(e -> onPlay.accept(episode));
 
-        JButton server = Theme.button("Servidor");
+        JButton server = Theme.button("Opciones");
         server.setAlignmentX(Component.CENTER_ALIGNMENT);
-        server.addActionListener(e -> onServer.accept(episode));
+        server.addActionListener(e -> onServer.accept(episode, server));
 
         actions.add(Box.createVerticalGlue());
         actions.add(play);
@@ -67,14 +83,43 @@ final class EpisodeRow extends JPanel {
 
         add(actions, BorderLayout.EAST);
 
-        MouseAdapter open = new MouseAdapter() {
+        MouseAdapter interaction = new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) onPlay.accept(episode);
             }
+
+            @Override public void mouseEntered(MouseEvent e) {
+                hovered = true;
+                repaint();
+            }
+
+            @Override public void mouseExited(MouseEvent e) {
+                hovered = false;
+                repaint();
+            }
         };
-        addMouseListener(open);
-        still.addMouseListener(open);
-        copy.addMouseListener(open);
+        addMouseListener(interaction);
+        still.addMouseListener(interaction);
+        copy.addMouseListener(interaction);
+    }
+
+    @Override protected void paintComponent(Graphics g) {
+        Graphics2D g2 = (Graphics2D) g.create();
+        try {
+            g2.setColor(hovered ? new Color(24, 29, 40) : new Color(16, 19, 26));
+            g2.fillRect(0, 0, getWidth(), getHeight());
+
+            if (progress > 0.01 && progress < 0.995) {
+                int barHeight = 4;
+                int y = getHeight() - barHeight;
+                g2.setColor(new Color(255, 255, 255, 55));
+                g2.fillRect(0, y, getWidth(), barHeight);
+                g2.setColor(Theme.ACCENT);
+                g2.fillRect(0, y, Math.max(2, (int) Math.round(getWidth() * progress)), barHeight);
+            }
+        } finally {
+            g2.dispose();
+        }
     }
 
     private static String shorten(String value, int max) {

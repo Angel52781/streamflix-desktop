@@ -34,6 +34,24 @@ final class TmdbSettings {
         return !clean(System.getenv(ENV_KEY)).isBlank();
     }
 
+    static String catalogLanguage() {
+        try {
+            Map<String, Object> settings = readSettingsForUpdate(settingsFile());
+            String value = clean(Json.string(settings.get("catalogLanguage")));
+            return "en".equalsIgnoreCase(value) ? "en" : "es";
+        } catch (TmdbException ignored) {
+            return "es";
+        }
+    }
+
+    static void saveCatalogLanguage(String value) throws TmdbException {
+        String language = "en".equalsIgnoreCase(clean(value)) ? "en" : "es";
+        Path file = settingsFile();
+        Map<String, Object> settings = readSettingsForUpdate(file);
+        settings.put("catalogLanguage", language);
+        writeAtomically(file, Json.stringify(settings));
+    }
+
     static boolean hasApiKey() throws TmdbException {
         return !apiKey().isBlank();
     }

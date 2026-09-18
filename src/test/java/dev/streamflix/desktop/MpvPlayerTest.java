@@ -5,6 +5,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -13,15 +15,24 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public final class MpvPlayerTest {
     public static void main(String[] args) throws Exception {
-        testCommandHeadersAndSubtitlePreference();
-        testEmbeddedCommand();
-        testPlaybackNetworkProfile();
-        testProgrammaticTimelineRefreshDoesNotSeek();
-        testImmediateFailureRejected();
-        testNewPlaybackStopsPrevious();
-        testStaleRequestCannotReplaceNewerIntent();
-        testShutdownPreventsRestart();
-        System.out.println("MpvPlayerTest OK");
+        Path settingsDir = Files.createTempDirectory("streamflix-mpv-settings-");
+        System.setProperty("streamflix.data.dir", settingsDir.toString());
+        try {
+            testCommandHeadersAndSubtitlePreference();
+            testPlaybackPreferenceOverrides();
+            testEmbeddedCommand();
+            testPlaybackNetworkProfile();
+            testProgrammaticTimelineRefreshDoesNotSeek();
+            testImmediateFailureRejected();
+            testNewPlaybackStopsPrevious();
+            testStaleRequestCannotReplaceNewerIntent();
+            testShutdownPreventsRestart();
+            System.out.println("MpvPlayerTest OK");
+        } finally {
+            Files.deleteIfExists(settingsDir.resolve("settings.json"));
+            Files.deleteIfExists(settingsDir);
+            System.clearProperty("streamflix.data.dir");
+        }
     }
 
     private static void testCommandHeadersAndSubtitlePreference() {
@@ -44,6 +55,25 @@ public final class MpvPlayerTest {
         int en = command.indexOf("--sub-file=en.vtt");
         require(d >= 0 && d < es && es < en, "default then Spanish then English subtitle order");
         require(command.contains("--force-media-title=Title Line"), "title sanitized");
+    }
+
+    private static void testPlaybackPreferenceOverrides() {
+        PlaybackSettings.save(true, "en", "off");
+        Models.Video video = new Models.Video(
+                "https://cdn.example/video.m3u8",
+                Map.of(),
+                List.of(
+                        new Models.Subtitle("English", "en.vtt", false),
+                        new Models.Subtitle("Español", "es.vtt", false)
+                )
+        );
+
+        List<String> command = MpvPlayer.playbackCommand("mpv.exe", video, "Preferences");
+        require(command.contains("--alang=en,eng,es,spa,es-ES,es-419"),
+                "English audio preference forwarded");
+        require(command.contains("--sid=no"), "subtitles can default to disabled");
+
+        PlaybackSettings.save(true, "auto", "es");
     }
 
     private static void testEmbeddedCommand() {

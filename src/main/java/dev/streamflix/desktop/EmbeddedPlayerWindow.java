@@ -40,7 +40,7 @@ final class EmbeddedPlayerWindow extends JFrame {
     private final JButton playPause = Theme.primaryButton("Pausar");
     private final JButton back10 = Theme.button("−10 s");
     private final JButton forward10 = Theme.button("+10 s");
-    private final JButton fullscreen = Theme.button("Pantalla completa");
+    private final JButton fullscreen = Theme.button("⛶");
 
     private final JSlider timeline = new JSlider(0, 1000, 0);
     private final JSlider volume = new JSlider(0, 100, 80);
@@ -65,6 +65,8 @@ final class EmbeddedPlayerWindow extends JFrame {
     private int stalledTicks;
     private int recoveryAttempts;
     private boolean recovering;
+    private ProgressListener progressListener;
+    private long lastProgressPublishNanos;
     private final Window appOwner;
     private boolean fullScreen;
     private boolean minimizedByApplication;
@@ -81,6 +83,7 @@ final class EmbeddedPlayerWindow extends JFrame {
         setContentPane(buildUi());
 
         mediaTitle.setText(title);
+        serverLabel.setVisible(false);
         videoSurface.setBackground(Color.BLACK);
         videoSurface.setFocusable(true);
 
@@ -88,7 +91,8 @@ final class EmbeddedPlayerWindow extends JFrame {
         refreshTimer = new Timer(1000, e -> refreshStateAsync());
         refreshTimer.setCoalesce(true);
         chromeHideTimer = new Timer(2400, e -> {
-            if (fullScreen) chromeBottom.setVisible(false);
+            chromeTop.setVisible(false);
+            chromeBottom.setVisible(false);
         });
         chromeHideTimer.setRepeats(false);
 
@@ -151,6 +155,10 @@ final class EmbeddedPlayerWindow extends JFrame {
         return window;
     }
 
+    void setProgressListener(ProgressListener listener) {
+        this.progressListener = listener;
+    }
+
     static void onApplicationStateChanged(int state) {
         Runnable action = () -> {
             EmbeddedPlayerWindow window = activeWindow;
@@ -207,6 +215,10 @@ final class EmbeddedPlayerWindow extends JFrame {
     }
 
     void start(Models.Video video, String serverName, long requestId) throws Exception {
+        start(video, serverName, requestId, 0.0);
+    }
+
+    void start(Models.Video video, String serverName, long requestId, double resumeAtSeconds) throws Exception {
         if (closing || !isDisplayable()) throw new IllegalStateException("El reproductor fue cerrado.");
 
         currentVideo = video;
@@ -217,6 +229,7 @@ final class EmbeddedPlayerWindow extends JFrame {
         stalledTicks = 0;
         recoveryAttempts = 0;
         recovering = false;
+        lastProgressPublishNanos = 0L;
 
         MpvIpcClient previous = ipc;
         ipc = null;
@@ -235,6 +248,11 @@ final class EmbeddedPlayerWindow extends JFrame {
             }
 
             waitUntilMediaReady(client, 30000);
+
+            if (resumeAtSeconds > 3.0) {
+                client.command(List.of("seek", resumeAtSeconds, "absolute+exact"));
+                lastKnownTime = resumeAtSeconds;
+            }
 
             try {
                 Object rawVolume = client.getProperty("volume");
@@ -261,6 +279,7 @@ final class EmbeddedPlayerWindow extends JFrame {
                 playPause.setText("Pausar");
                 showStage(CARD_VIDEO);
                 refreshTimer.start();
+                revealChrome();
             });
         } catch (Exception ex) {
             client.close();
@@ -303,7 +322,9 @@ final class EmbeddedPlayerWindow extends JFrame {
 
         JPanel topActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         topActions.setOpaque(false);
-        JButton close = Theme.button("Cerrar");
+        JButton close = Theme.button("←");
+        close.setToolTipText("Volver a Streamflix (Esc)");
+        close.setPreferredSize(new Dimension(42, 36));
         close.addActionListener(e -> dispose());
         topActions.add(close);
         chromeTop.add(topActions, BorderLayout.EAST);
@@ -348,10 +369,8 @@ final class EmbeddedPlayerWindow extends JFrame {
         left.add(forward10);
         left.add(Box.createHorizontalStrut(8));
 
-        JLabel volumeLabel = Theme.muted("Volumen");
-        volumeLabel.setFont(Theme.FONT.deriveFont(11.5f));
-        left.add(volumeLabel);
-        volume.setPreferredSize(new Dimension(110, 30));
+        volume.setToolTipText("Volumen");
+        volume.setPreferredSize(new Dimension(105, 30));
         volume.setOpaque(false);
         left.add(volume);
         actions.add(left, BorderLayout.WEST);
@@ -361,6 +380,8 @@ final class EmbeddedPlayerWindow extends JFrame {
 
         audioButton.setToolTipText("Seleccionar pista de audio");
         subtitleButton.setToolTipText("Seleccionar subtítulos");
+        fullscreen.setToolTipText("Pantalla completa (F)");
+        fullscreen.setPreferredSize(new Dimension(48, 36));
         audioButton.setEnabled(false);
         subtitleButton.setEnabled(false);
 
@@ -448,25 +469,19 @@ final class EmbeddedPlayerWindow extends JFrame {
         if (!fullScreen) {
             device.setFullScreenWindow(this);
             fullScreen = true;
-            chromeTop.setVisible(false);
-            chromeBottom.setVisible(true);
-            chromeHideTimer.restart();
-            fullscreen.setText("Salir de pantalla completa");
+            revealChrome();
         } else {
             device.setFullScreenWindow(null);
             fullScreen = false;
-            chromeHideTimer.stop();
-            chromeTop.setVisible(true);
-            chromeBottom.setVisible(true);
             setSize(1320, 820);
             setLocationRelativeTo(appOwner);
-            fullscreen.setText("Pantalla completa");
+            revealChrome();
         }
         videoSurface.requestFocusInWindow();
     }
 
     private void revealChrome() {
-        if (!fullScreen) return;
+        chromeTop.setVisible(true);
         chromeBottom.setVisible(true);
         chromeHideTimer.restart();
     }
@@ -556,6 +571,8 @@ final class EmbeddedPlayerWindow extends JFrame {
 
                     // A short CDN hiccup should be absorbed by mpv's cache. Only
                     // recover after a genuinely prolonged stall.
+                    publishProgress(state.time(), state.duration());
+
                     if (!state.paused() && stalledTicks >= 20) {
                         requestRecovery(state.pausedForCache()
                                 ? "El servidor dejó de entregar datos."
@@ -572,6 +589,21 @@ final class EmbeddedPlayerWindow extends JFrame {
                 }
             }
         }.execute();
+    }
+
+    private void publishProgress(double progress, double duration) {
+        ProgressListener listener = progressListener;
+        if (listener == null || duration <= 0 || progress < 0) return;
+
+        long now = System.nanoTime();
+        if (lastProgressPublishNanos != 0L
+                && now - lastProgressPublishNanos < java.util.concurrent.TimeUnit.SECONDS.toNanos(5)) {
+            return;
+        }
+        lastProgressPublishNanos = now;
+        try {
+            listener.onProgress(progress, duration, false);
+        } catch (RuntimeException ignored) {}
     }
 
     private void requestRecovery(String reason) {
@@ -795,7 +827,20 @@ final class EmbeddedPlayerWindow extends JFrame {
             try { MpvPlayer.beginRequest(); } catch (RuntimeException ignored) {}
             try { MpvPlayer.stopCurrent(); } catch (RuntimeException ignored) {}
         }
+        if (durationSeconds > 0 && lastKnownTime >= 0) {
+            ProgressListener listener = progressListener;
+            if (listener != null) {
+                try { listener.onProgress(lastKnownTime, durationSeconds, true); }
+                catch (RuntimeException ignored) {}
+            }
+        }
+
         if (activeWindow == this) activeWindow = null;
+    }
+
+    @FunctionalInterface
+    interface ProgressListener {
+        void onProgress(double progressSeconds, double durationSeconds, boolean finalUpdate);
     }
 
     private static String trackLabel(String lang, String title, int id) {

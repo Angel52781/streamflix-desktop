@@ -20,8 +20,9 @@ final class Theme {
     static final Color ACCENT_HOVER = new Color(248, 62, 72);
     static final Color DANGER = new Color(255, 118, 118);
 
-    static final Font FONT = new Font("Segoe UI", Font.PLAIN, 14);
-    static final Font FONT_BOLD = new Font("Segoe UI Semibold", Font.PLAIN, 14);
+    static final Font FONT = new Font("Segoe UI Variable Text", Font.PLAIN, 14);
+    static final Font FONT_BOLD = new Font("Segoe UI Variable Text", Font.BOLD, 14);
+    static final Font FONT_DISPLAY = new Font("Segoe UI Variable Display", Font.BOLD, 14);
 
     private Theme() {}
 
@@ -127,7 +128,7 @@ final class Theme {
     static JLabel heading(String text, float size) {
         JLabel l = new JLabel(text);
         l.setForeground(TEXT);
-        l.setFont(FONT_BOLD.deriveFont(size));
+        l.setFont(FONT_DISPLAY.deriveFont(size));
         return l;
     }
 

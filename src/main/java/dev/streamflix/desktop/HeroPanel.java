@@ -11,6 +11,12 @@ final class HeroPanel extends JLayeredPane {
     private final JPanel copy;
 
     HeroPanel(Models.ShowItem item, Consumer<Models.ShowItem> onOpen) {
+        this(item, onOpen, onOpen);
+    }
+
+    HeroPanel(Models.ShowItem item,
+              Consumer<Models.ShowItem> onPlay,
+              Consumer<Models.ShowItem> onOpen) {
         setPreferredSize(new Dimension(1080, 500));
         setMaximumSize(new Dimension(Integer.MAX_VALUE, 500));
         setOpaque(true);
@@ -87,9 +93,17 @@ final class HeroPanel extends JLayeredPane {
         description.setFont(Theme.FONT.deriveFont(14.5f));
         description.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JButton open = Theme.primaryButton("Ver detalles");
-        open.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 9, 0));
+        actions.setOpaque(false);
+        actions.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JButton play = Theme.primaryButton("▶  Reproducir");
+        play.addActionListener(e -> onPlay.accept(item));
+        actions.add(play);
+
+        JButton open = Theme.button("Más información");
         open.addActionListener(e -> onOpen.accept(item));
+        actions.add(open);
 
         copy.add(eyebrow);
         copy.add(Box.createVerticalStrut(10));
@@ -99,7 +113,7 @@ final class HeroPanel extends JLayeredPane {
         copy.add(Box.createVerticalStrut(15));
         copy.add(description);
         copy.add(Box.createVerticalStrut(20));
-        copy.add(open);
+        copy.add(actions);
 
         add(copy, Integer.valueOf(2));
     }

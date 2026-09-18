@@ -9,16 +9,38 @@ import java.util.function.Consumer;
 final class LandscapeCard extends JLayeredPane {
     private final ArtworkPanel artwork;
     private final JPanel overlay;
+    private final double progress;
+    private Timer hoverTimer;
     private boolean hovered;
     private boolean focused;
+    private float hoverAmount;
+    private float hoverTarget;
 
     LandscapeCard(Models.ShowItem item, Consumer<Models.ShowItem> onOpen) {
+        this(item, onOpen, 0.0);
+    }
+
+    LandscapeCard(Models.ShowItem item, Consumer<Models.ShowItem> onOpen, double progress) {
+        this.progress = Math.max(0.0, Math.min(1.0, progress));
         setOpaque(false);
         setPreferredSize(new Dimension(300, 172));
         setMinimumSize(new Dimension(220, 126));
         setMaximumSize(new Dimension(380, 214));
         setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         setFocusable(true);
+
+        hoverTimer = new Timer(16, e -> {
+            float delta = hoverTarget - hoverAmount;
+            if (Math.abs(delta) < 0.02f) {
+                hoverAmount = hoverTarget;
+                hoverTimer.stop();
+            } else {
+                hoverAmount += Math.signum(delta) * Math.min(Math.abs(delta), 0.16f);
+            }
+            revalidate();
+            repaintAll();
+        });
+        hoverTimer.setCoalesce(true);
 
         String image = item.banner() != null && !item.banner().isBlank()
                 ? item.banner() : item.poster();
@@ -43,6 +65,15 @@ final class LandscapeCard extends JLayeredPane {
                     if (hovered || focused) {
                         g2.setColor(focused ? Theme.ACCENT : new Color(255, 255, 255, 55));
                         g2.drawRoundRect(0, 0, w - 1, h - 1, 12, 12);
+                    }
+
+                    if (progress > 0.01 && progress < 0.995) {
+                        int barHeight = 4;
+                        int y = h - barHeight;
+                        g2.setColor(new Color(255, 255, 255, 70));
+                        g2.fillRect(0, y, w, barHeight);
+                        g2.setColor(Theme.ACCENT);
+                        g2.fillRect(0, y, Math.max(2, (int) Math.round(w * progress)), barHeight);
                     }
                 } finally {
                     g2.dispose();
@@ -105,12 +136,12 @@ final class LandscapeCard extends JLayeredPane {
 
             @Override public void mouseEntered(MouseEvent e) {
                 hovered = true;
-                repaintAll();
+                animateHover(1f);
             }
 
             @Override public void mouseExited(MouseEvent e) {
                 hovered = false;
-                repaintAll();
+                if (!focused) animateHover(0f);
             }
         };
 
@@ -123,12 +154,12 @@ final class LandscapeCard extends JLayeredPane {
         addFocusListener(new FocusAdapter() {
             @Override public void focusGained(FocusEvent e) {
                 focused = true;
-                repaintAll();
+                animateHover(1f);
             }
 
             @Override public void focusLost(FocusEvent e) {
                 focused = false;
-                repaintAll();
+                if (!hovered) animateHover(0f);
             }
         });
 
@@ -144,8 +175,14 @@ final class LandscapeCard extends JLayeredPane {
     @Override public void doLayout() {
         int w = getWidth();
         int h = getHeight();
-        artwork.setBounds(0, 0, w, h);
+        int zoom = Math.round(7f * hoverAmount);
+        artwork.setBounds(-zoom, -zoom, w + zoom * 2, h + zoom * 2);
         overlay.setBounds(0, 0, w, h);
+    }
+
+    private void animateHover(float target) {
+        hoverTarget = target;
+        if (!hoverTimer.isRunning()) hoverTimer.start();
     }
 
     private void repaintAll() {

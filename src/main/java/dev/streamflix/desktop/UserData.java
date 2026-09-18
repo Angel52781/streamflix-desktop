@@ -12,6 +12,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class UserData {
@@ -22,8 +26,22 @@ public class UserData {
 
     private static final List<Models.ShowItem> favorites = new CopyOnWriteArrayList<>();
     private static final List<HistoryEntry> history = new CopyOnWriteArrayList<>();
+    private static final ExecutorService HISTORY_WRITER = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "streamflix-history-writer");
+        thread.setDaemon(true);
+        return thread;
+    });
 
-    public record HistoryEntry(Models.ShowItem show, long timestamp, double progressSeconds, double durationSeconds) {}
+    public record HistoryEntry(
+            Models.ShowItem show,
+            long timestamp,
+            double progressSeconds,
+            double durationSeconds,
+            String mediaId,
+            Integer seasonNumber,
+            Integer episodeNumber,
+            String mediaTitle
+    ) {}
 
     static {
         DATA_DIR = resolveDataDir();
@@ -69,8 +87,21 @@ public class UserData {
                     long timestamp = Json.integer(map.get("timestamp")) != null ? Json.integer(map.get("timestamp")).longValue() : 0L;
                     double progress = Json.decimal(map.get("progress")) != null ? Json.decimal(map.get("progress")) : 0.0;
                     double duration = Json.decimal(map.get("duration")) != null ? Json.decimal(map.get("duration")) : 0.0;
+                    String mediaId = Json.string(map.get("mediaId"));
+                    Integer seasonNumber = Json.integer(map.get("seasonNumber"));
+                    Integer episodeNumber = Json.integer(map.get("episodeNumber"));
+                    String mediaTitle = Json.string(map.get("mediaTitle"));
                     if (item != null) {
-                        history.add(new HistoryEntry(item, timestamp, progress, duration));
+                        history.add(new HistoryEntry(
+                                item,
+                                timestamp,
+                                progress,
+                                duration,
+                                mediaId.isBlank() ? null : mediaId,
+                                seasonNumber,
+                                episodeNumber,
+                                mediaTitle.isBlank() ? null : mediaTitle
+                        ));
                     }
                 }
             }
@@ -96,6 +127,10 @@ public class UserData {
                 map.put("timestamp", entry.timestamp());
                 map.put("progress", entry.progressSeconds());
                 map.put("duration", entry.durationSeconds());
+                if (entry.mediaId() != null) map.put("mediaId", entry.mediaId());
+                if (entry.seasonNumber() != null) map.put("seasonNumber", entry.seasonNumber());
+                if (entry.episodeNumber() != null) map.put("episodeNumber", entry.episodeNumber());
+                if (entry.mediaTitle() != null) map.put("mediaTitle", entry.mediaTitle());
                 out.add(map);
             }
             writeAtomically(HISTORY_FILE, Json.stringify(out));
@@ -137,6 +172,84 @@ public class UserData {
     }
 
     public static void recordHistory(String sourceProviderId, Models.ShowItem item, double progress, double duration) {
+        recordHistoryInternal(sourceProviderId, item, item.providerId(), null, null, item.title(), progress, duration);
+    }
+
+    public static void recordEpisodeHistory(String sourceProviderId, Models.ShowItem show,
+                                            Models.Episode episode, double progress, double duration) {
+        Objects.requireNonNull(episode, "episode");
+        recordHistoryInternal(
+                sourceProviderId,
+                show,
+                episode.id(),
+                episode.seasonNumber(),
+                episode.episodeNumber(),
+                show.title() + " · T" + episode.seasonNumber() + "E" + episode.episodeNumber(),
+                progress,
+                duration
+        );
+    }
+
+    static void recordHistoryAsync(String sourceProviderId, Models.ShowItem item,
+                                   double progress, double duration) {
+        HISTORY_WRITER.execute(() ->
+                recordHistoryInternal(sourceProviderId, item, item.providerId(), null, null,
+                        item.title(), progress, duration));
+    }
+
+    static void recordEpisodeHistoryAsync(String sourceProviderId, Models.ShowItem show,
+                                          Models.Episode episode, double progress, double duration) {
+        Objects.requireNonNull(episode, "episode");
+        HISTORY_WRITER.execute(() ->
+                recordHistoryInternal(
+                        sourceProviderId,
+                        show,
+                        episode.id(),
+                        episode.seasonNumber(),
+                        episode.episodeNumber(),
+                        show.title() + " · T" + episode.seasonNumber() + "E" + episode.episodeNumber(),
+                        progress,
+                        duration
+                ));
+    }
+
+    static void recordHistoryFinal(String sourceProviderId, Models.ShowItem item,
+                                   double progress, double duration) {
+        awaitHistoryWrite(() ->
+                recordHistoryInternal(sourceProviderId, item, item.providerId(), null, null,
+                        item.title(), progress, duration));
+    }
+
+    static void recordEpisodeHistoryFinal(String sourceProviderId, Models.ShowItem show,
+                                          Models.Episode episode, double progress, double duration) {
+        Objects.requireNonNull(episode, "episode");
+        awaitHistoryWrite(() ->
+                recordHistoryInternal(
+                        sourceProviderId,
+                        show,
+                        episode.id(),
+                        episode.seasonNumber(),
+                        episode.episodeNumber(),
+                        show.title() + " · T" + episode.seasonNumber() + "E" + episode.episodeNumber(),
+                        progress,
+                        duration
+                ));
+    }
+
+    private static void awaitHistoryWrite(Runnable write) {
+        try {
+            Future<?> future = HISTORY_WRITER.submit(write);
+            future.get(5, TimeUnit.SECONDS);
+        } catch (Exception ex) {
+            // Preserve the user's final position even if the background writer is unavailable.
+            write.run();
+        }
+    }
+
+    private static synchronized void recordHistoryInternal(
+                                      String sourceProviderId, Models.ShowItem item,
+                                      String mediaId, Integer seasonNumber, Integer episodeNumber,
+                                      String mediaTitle, double progress, double duration) {
         Objects.requireNonNull(sourceProviderId, "sourceProviderId");
         Models.ShowItem stored = item.withSourceProviderId(sourceProviderId);
         HistoryEntry existing = history.stream()
@@ -146,10 +259,23 @@ public class UserData {
         if (existing != null && progress == 0.0 && duration == 0.0) {
             progress = existing.progressSeconds();
             duration = existing.durationSeconds();
+            if (mediaId == null) mediaId = existing.mediaId();
+            if (seasonNumber == null) seasonNumber = existing.seasonNumber();
+            if (episodeNumber == null) episodeNumber = existing.episodeNumber();
+            if (mediaTitle == null) mediaTitle = existing.mediaTitle();
         }
 
         history.removeIf(h -> sameSourceItem(h.show(), sourceProviderId, item.id()));
-        history.add(0, new HistoryEntry(stored, System.currentTimeMillis(), progress, duration));
+        history.add(0, new HistoryEntry(
+                stored,
+                System.currentTimeMillis(),
+                progress,
+                duration,
+                mediaId,
+                seasonNumber,
+                episodeNumber,
+                mediaTitle
+        ));
         while (history.size() > 100) {
             history.remove(history.size() - 1);
         }
@@ -164,8 +290,42 @@ public class UserData {
         return new ArrayList<>(favorites);
     }
 
+    public static void clearFavorites() {
+        favorites.clear();
+        saveFavorites();
+    }
+
+    public static void clearHistory() {
+        awaitHistoryWrite(() -> {
+            history.clear();
+            saveHistory();
+        });
+    }
+
     public static List<Models.ShowItem> getHistory() {
         return history.stream().map(HistoryEntry::show).collect(Collectors.toList());
+    }
+
+    public static List<HistoryEntry> getHistoryEntries() {
+        return new ArrayList<>(history);
+    }
+
+    public static HistoryEntry getHistoryEntry(String sourceProviderId, Models.ShowItem item) {
+        if (sourceProviderId == null || item == null) return null;
+        return history.stream()
+                .filter(h -> sameSourceItem(h.show(), sourceProviderId, item.id()))
+                .findFirst().orElse(null);
+    }
+
+    public static double progressFraction(String sourceProviderId, Models.ShowItem item) {
+        if (sourceProviderId == null || item == null) return 0.0;
+        HistoryEntry entry = history.stream()
+                .filter(h -> sameSourceItem(h.show(), sourceProviderId, item.id()))
+                .findFirst().orElse(null);
+        if (entry == null || entry.durationSeconds() <= 0) return 0.0;
+        double fraction = entry.progressSeconds() / entry.durationSeconds();
+        if (!Double.isFinite(fraction)) return 0.0;
+        return Math.max(0.0, Math.min(1.0, fraction));
     }
 
     private static Map<String, Object> serializeShowItem(Models.ShowItem item) {

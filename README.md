@@ -10,21 +10,24 @@ Extract the ZIP and run `StreamflixDesktop.exe`. The portable package already in
 
 You can also browse versioned releases and checksums on the [GitHub Releases page](https://github.com/Angel52781/streamflix-desktop/releases).
 
-## Current release
+## Current stable release
 
 Version: **1.2.0**
+
+The `main` branch is currently preparing **1.3.0**, focused on the unified TMDb catalog and the streaming UX/UI redesign.
 
 ### Core experience
 
 - Java 17-compatible JVM application with Swing + FlatLaf
-- Cinematic desktop navigation with Home, Movies, Series, Live TV, Favorites and History
-- TMDb metadata catalogs in **English (en-US)** and **Spanish (es-ES)**
+- Cinematic desktop navigation with Home, Movies, Series, Live TV and Mi lista
+- Unified TMDb catalog with **English (en-US)** or **Spanish (es-ES)** selected from Settings
 - TMDb API key or Read Access Token configured locally from Settings
 - High-resolution TMDb posters/backdrops with HiDPI-aware image rendering
-- Search, details, seasons, specials and episodes
+- Debounced global search, in-app title details, seasons, specials and episodes
 - Visible horizontal season navigation
-- Streaming-style episode rows with stills and synopsis
-- Persistent favorites/history under %APPDATA%\\Streamflix
+- Streaming-style episode rows with stills, synopsis and playback progress
+- Continue Watching with persistent movie/episode progress and resume
+- Persistent Mi lista/history under %APPDATA%\\Streamflix
 - Atomic settings/userdata writes and test data-directory isolation
 - Progressive catalog loading while scrolling
 
@@ -38,8 +41,8 @@ Version: **1.2.0**
 - Manual server selection
 - Playback headers forwarded to mpv
 - Pause/resume, seek ±10 s, timeline, volume, audio-track and subtitle selection
-- Controls auto-hide in fullscreen
-- Spanish/English subtitle preference
+- Controls auto-hide in windowed and fullscreen playback
+- Configurable preferred audio and subtitle language
 - TMDb playback currently certified through VixSrc for movies and episodes in EN/ES
 
 ### Catalog/provider inventory

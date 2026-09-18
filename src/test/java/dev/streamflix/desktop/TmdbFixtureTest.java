@@ -44,6 +44,14 @@ public final class TmdbFixtureTest {
             require("0123456789abcdef0123456789abcdef".equals(TmdbSettings.localApiKey()), "saved local key");
             String raw = Files.readString(dataDir.resolve("settings.json"));
             require(raw.contains("\"tmdbApiKey\""), "settings field persisted");
+
+            PlaybackSettings.save(false, "en", "off");
+            require("0123456789abcdef0123456789abcdef".equals(TmdbSettings.localApiKey()),
+                    "playback settings preserve TMDb credential");
+            require(!PlaybackSettings.startMaximized(), "window preference persisted");
+            require("en".equals(PlaybackSettings.audioLanguage()), "audio preference persisted");
+            require("off".equals(PlaybackSettings.subtitleLanguage()), "subtitle preference persisted");
+
             TmdbSettings.saveApiKey("");
             require(TmdbSettings.localApiKey().isBlank(), "empty key removes local setting");
         } finally {

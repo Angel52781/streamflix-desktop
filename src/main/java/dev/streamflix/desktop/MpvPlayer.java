@@ -196,11 +196,19 @@ final class MpvPlayer {
         cmd.add("--cache-pause-wait=2");
         cmd.add("--force-media-title=" + safe(title));
         cmd.add("--audio-client-name=Streamflix");
+        String audioPreference = PlaybackSettings.audioLanguage();
+        if (!"auto".equals(audioPreference)) {
+            cmd.add("--alang=" + PlaybackSettings.audioPreferenceArgument());
+        }
+
         addHeaders(cmd, video);
         List<Models.Subtitle> subtitles = orderedSubtitles(video.subtitles());
-        if (!subtitles.isEmpty()) {
-            cmd.add("--slang=es,spa,es-ES,es-419,en,eng");
+        String subtitlePreference = PlaybackSettings.subtitlePreferenceArgument();
+        if (!subtitles.isEmpty() && !subtitlePreference.isBlank()) {
+            cmd.add("--slang=" + subtitlePreference);
             cmd.add("--sid=auto");
+        } else if ("off".equals(PlaybackSettings.subtitleLanguage())) {
+            cmd.add("--sid=no");
         }
         for (Models.Subtitle subtitle : subtitles) {
             cmd.add("--sub-file=" + subtitle.file());
@@ -210,20 +218,29 @@ final class MpvPlayer {
 
     static List<Models.Subtitle> orderedSubtitles(List<Models.Subtitle> subtitles) {
         if (subtitles == null) return List.of();
+        String preferred = PlaybackSettings.subtitleLanguage();
         return subtitles.stream()
                 .filter(s -> s != null && s.file() != null && !s.file().isBlank())
                 .sorted(Comparator.comparingInt((Models.Subtitle s) -> s.isDefault() ? 0 : 1)
-                        .thenComparingInt(s -> languageRank(s.label())))
+                        .thenComparingInt(s -> languageRank(s.label(), preferred)))
                 .toList();
     }
 
-    private static int languageRank(String label) {
+    private static int languageRank(String label, String preferred) {
         if (label == null) return 2;
         String normalized = Normalizer.normalize(label, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}+", "").toLowerCase(Locale.ROOT);
         Set<String> words = new HashSet<>(Arrays.asList(normalized.split("[^a-z]+")));
-        if (!Collections.disjoint(words, Set.of("spanish", "espanol", "es", "spa"))) return 0;
-        if (!Collections.disjoint(words, Set.of("english", "ingles", "en", "eng"))) return 1;
+        boolean spanish = !Collections.disjoint(words, Set.of("spanish", "espanol", "es", "spa"));
+        boolean english = !Collections.disjoint(words, Set.of("english", "ingles", "en", "eng"));
+
+        if ("en".equals(preferred)) {
+            if (english) return 0;
+            if (spanish) return 1;
+        } else {
+            if (spanish) return 0;
+            if (english) return 1;
+        }
         return 2;
     }
 

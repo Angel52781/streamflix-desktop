@@ -9,17 +9,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 final class MainFrame extends JFrame {
-    private enum Mode { HOME, MOVIES, SERIES, LIVE, SEARCH, FAVORITES, HISTORY }
+    private enum Mode { HOME, MOVIES, SERIES, LIVE, SEARCH, FAVORITES }
 
     private final List<Provider> providers;
-    private final List<Provider> providerChoices = new ArrayList<>();
     private Provider provider;
-    private boolean updatingProviderBox;
-
-    private final JComboBox<String> providerBox = new JComboBox<>();
-    private final JLabel sourceLabel = Theme.muted("Catálogo");
-    private final JPanel sourceWrap = new JPanel(new BorderLayout(7, 0));
     private final JPanel contentStack = new JPanel(new CardLayout());
+    private final JPanel detailHost = new JPanel(new BorderLayout());
+    private boolean detailOpen;
+    private boolean homeNeedsRefresh;
     private final JPanel grid = new JPanel();
     private final JPanel homeRoot = new JPanel();
     private final JPanel pagingBar = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
@@ -30,13 +27,13 @@ final class MainFrame extends JFrame {
     private final JLabel status = Theme.muted(" ");
     private final JPanel sectionHeaderPanel = new JPanel(new BorderLayout());
     private final JTextField search = new JTextField(27);
+    private final Timer searchDebounce;
 
     private final JButton homeButton = Theme.topNavButton("Inicio");
     private final JButton moviesButton = Theme.topNavButton("Películas");
     private final JButton seriesButton = Theme.topNavButton("Series");
     private final JButton liveButton = Theme.topNavButton("TV");
-    private final JButton favoritesButton = Theme.topNavButton("Favoritos");
-    private final JButton historyButton = Theme.topNavButton("Historial");
+    private final JButton favoritesButton = Theme.topNavButton("Mi lista");
 
     private final JButton resetButton = Theme.button("Volver al inicio");
     private final JButton nextButton = Theme.button("Cargar más");
@@ -56,6 +53,8 @@ final class MainFrame extends JFrame {
         }
         this.providers = List.copyOf(providers);
         this.provider = preferredVodProvider(true);
+        this.searchDebounce = new Timer(350, e -> runSearch());
+        this.searchDebounce.setRepeats(false);
 
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         getRootPane().putClientProperty("JRootPane.titleBarBackground", Theme.SIDEBAR);
@@ -80,7 +79,6 @@ final class MainFrame extends JFrame {
         });
 
         installShortcuts();
-        refreshProviderChoices();
         updateNavigationState();
         updateHeader();
         loadHome();
@@ -97,7 +95,6 @@ final class MainFrame extends JFrame {
         seriesButton.addActionListener(e -> switchMode(Mode.SERIES));
         liveButton.addActionListener(e -> switchMode(Mode.LIVE));
         favoritesButton.addActionListener(e -> switchMode(Mode.FAVORITES));
-        historyButton.addActionListener(e -> switchMode(Mode.HISTORY));
     }
 
     private JComponent buildWorkspace() {
@@ -127,11 +124,11 @@ final class MainFrame extends JFrame {
 
         JLabel logo = new JLabel("STREAMFLIX");
         logo.setForeground(Theme.ACCENT);
-        logo.setFont(Theme.FONT_BOLD.deriveFont(20f));
+        logo.setFont(Theme.FONT_DISPLAY.deriveFont(20f));
         logo.setBorder(new EmptyBorder(0, 0, 0, 12));
         left.add(logo);
 
-        for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton, favoritesButton, historyButton)) {
+        for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton, favoritesButton)) {
             left.add(button);
         }
         top.add(left, BorderLayout.WEST);
@@ -139,29 +136,24 @@ final class MainFrame extends JFrame {
         JPanel tools = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         tools.setOpaque(false);
 
-        sourceWrap.setOpaque(false);
-        sourceWrap.setBorder(new EmptyBorder(0, 0, 0, 2));
-        sourceLabel.setFont(Theme.FONT.deriveFont(11.5f));
-        sourceWrap.add(sourceLabel, BorderLayout.WEST);
-
-        providerBox.setPreferredSize(new Dimension(175, 36));
-        providerBox.setToolTipText("El catálogo elegido determina dónde se buscan los títulos.");
-        providerBox.addActionListener(e -> {
-            if (!updatingProviderBox) switchProvider(providerBox.getSelectedIndex());
-        });
-        sourceWrap.add(providerBox, BorderLayout.CENTER);
-        tools.add(sourceWrap);
-
-        search.putClientProperty("JTextField.placeholderText", "Buscar títulos");
+        search.putClientProperty("JTextField.placeholderText", "Buscar películas y series");
         search.putClientProperty("JTextField.showClearButton", true);
         search.setPreferredSize(new Dimension(245, 38));
-        search.setToolTipText("Buscar en el catálogo seleccionado");
-        search.addActionListener(e -> runSearch());
+        search.setToolTipText("Buscar películas y series · Ctrl+F");
+        search.addActionListener(e -> {
+            searchDebounce.stop();
+            runSearch();
+        });
+        search.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            private void changed() {
+                if (search.getText().trim().length() >= 2) searchDebounce.restart();
+                else searchDebounce.stop();
+            }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { changed(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { changed(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { changed(); }
+        });
         tools.add(search);
-
-        JButton searchButton = Theme.primaryButton("Buscar");
-        searchButton.addActionListener(e -> runSearch());
-        tools.add(searchButton);
 
         JButton settings = Theme.button("Ajustes");
         settings.addActionListener(e -> openSettings());
@@ -233,7 +225,7 @@ final class MainFrame extends JFrame {
 
         homeRoot.setBackground(Theme.BG);
         homeRoot.setLayout(new BoxLayout(homeRoot, BoxLayout.Y_AXIS));
-        homeRoot.setBorder(new EmptyBorder(2, 34, 36, 34));
+        homeRoot.setBorder(new EmptyBorder(0, 0, 36, 0));
 
         JPanel homeViewport = new JPanel(new BorderLayout());
         homeViewport.setBackground(Theme.BG);
@@ -245,15 +237,19 @@ final class MainFrame extends JFrame {
         homeScroll.getVerticalScrollBar().setUnitIncrement(30);
         homeScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
+        detailHost.setBackground(Theme.BG);
         contentStack.add(homeScroll, Mode.HOME.name());
         contentStack.add(catalogScroll, "CATALOG");
+        contentStack.add(detailHost, "DETAIL");
         return contentStack;
     }
 
     private void switchMode(Mode newMode) {
         if (newMode == mode && newMode != Mode.HOME) return;
         if (activeWorker != null && !activeWorker.isDone()) activeWorker.cancel(true);
+        searchDebounce.stop();
 
+        detailOpen = false;
         mode = newMode;
         page = 1;
         hasMore = true;
@@ -261,11 +257,10 @@ final class MainFrame extends JFrame {
         loadedItems.clear();
         search.setText("");
 
-        if (newMode == Mode.MOVIES) provider = compatibleOrPreferred(true, false);
-        else if (newMode == Mode.SERIES) provider = compatibleOrPreferred(false, false);
-        else if (newMode == Mode.LIVE) provider = compatibleOrPreferred(false, true);
+        if (newMode == Mode.MOVIES) provider = preferredVodProvider(true);
+        else if (newMode == Mode.SERIES) provider = preferredVodProvider(false);
+        else if (newMode == Mode.LIVE) provider = preferredLiveProvider();
 
-        refreshProviderChoices();
         updateNavigationState();
         updateHeader();
 
@@ -273,33 +268,23 @@ final class MainFrame extends JFrame {
         else loadPage(false);
     }
 
-    private Provider compatibleOrPreferred(boolean movies, boolean live) {
-        if (provider != null
-                && (provider instanceof M3uLiveProvider) == live
-                && (live || (movies ? provider.supportsMovies() : provider.supportsTvShows()))) {
-            return provider;
-        }
-        return live ? preferredLiveProvider() : preferredVodProvider(movies);
-    }
-
     private Provider preferredVodProvider(boolean movies) {
-        boolean tmdbReady = tmdbReady();
-        if (tmdbReady) {
-            Provider spanishTmdb = ProviderRegistry.get("tmdb-es");
-            if (spanishTmdb != null && (movies ? spanishTmdb.supportsMovies() : spanishTmdb.supportsTvShows())) {
-                return spanishTmdb;
-            }
-            Provider englishTmdb = ProviderRegistry.get("tmdb-en");
-            if (englishTmdb != null && (movies ? englishTmdb.supportsMovies() : englishTmdb.supportsTvShows())) {
-                return englishTmdb;
-            }
+        String language = TmdbSettings.catalogLanguage();
+
+        Provider preferredTmdb = ProviderRegistry.get("en".equals(language) ? "tmdb-en" : "tmdb-es");
+        if (preferredTmdb != null && (movies ? preferredTmdb.supportsMovies() : preferredTmdb.supportsTvShows())) {
+            return preferredTmdb;
         }
+
+        Provider fallbackTmdb = ProviderRegistry.get("en".equals(language) ? "tmdb-es" : "tmdb-en");
+        if (fallbackTmdb != null && (movies ? fallbackTmdb.supportsMovies() : fallbackTmdb.supportsTvShows())) {
+            return fallbackTmdb;
+        }
+
+        // Defensive fallback only for builds where TMDb providers were not registered at all.
         for (Provider p : providers) {
-            if (p instanceof M3uLiveProvider || p instanceof TmdbProvider) continue;
+            if (p instanceof M3uLiveProvider) continue;
             if (movies ? p.supportsMovies() : p.supportsTvShows()) return p;
-        }
-        for (Provider p : providers) {
-            if (!(p instanceof M3uLiveProvider) && (movies ? p.supportsMovies() : p.supportsTvShows())) return p;
         }
         return providers.get(0);
     }
@@ -315,71 +300,17 @@ final class MainFrame extends JFrame {
         catch (TmdbException ignored) { return false; }
     }
 
-    private void refreshProviderChoices() {
-        providerChoices.clear();
-
-        if (mode == Mode.LIVE) {
-            providerChoices.addAll(providers.stream().filter(M3uLiveProvider.class::isInstance).toList());
-        } else if (mode == Mode.MOVIES) {
-            providerChoices.addAll(providers.stream()
-                    .filter(p -> !(p instanceof M3uLiveProvider) && p.supportsMovies()).toList());
-        } else if (mode == Mode.SERIES) {
-            providerChoices.addAll(providers.stream()
-                    .filter(p -> !(p instanceof M3uLiveProvider) && p.supportsTvShows()).toList());
-        } else if (mode == Mode.SEARCH) {
-            boolean live = provider instanceof M3uLiveProvider;
-            providerChoices.addAll(providers.stream()
-                    .filter(p -> (p instanceof M3uLiveProvider) == live).toList());
-        }
-
-        updatingProviderBox = true;
-        try {
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
-            for (Provider p : providerChoices) model.addElement(p.name());
-            providerBox.setModel(model);
-
-            int selected = providerChoices.indexOf(provider);
-            if (selected < 0 && !providerChoices.isEmpty()) {
-                provider = providerChoices.get(0);
-                selected = 0;
-            }
-            if (selected >= 0) providerBox.setSelectedIndex(selected);
-        } finally {
-            updatingProviderBox = false;
-        }
-
-        boolean liveCatalog = mode == Mode.LIVE || (mode == Mode.SEARCH && provider instanceof M3uLiveProvider);
-        sourceLabel.setText(liveCatalog ? "Lista" : "Catálogo");
-        sourceWrap.setVisible(mode == Mode.MOVIES || mode == Mode.SERIES || mode == Mode.LIVE || mode == Mode.SEARCH);
-    }
-
-    private void switchProvider(int index) {
-        if (index < 0 || index >= providerChoices.size()) return;
-        Provider selected = providerChoices.get(index);
-        if (selected.id().equals(provider.id())) return;
-
-        if (activeWorker != null && !activeWorker.isDone()) activeWorker.cancel(true);
-        provider = selected;
-        page = 1;
-        hasMore = true;
-        loadedItems.clear();
-        updateHeader();
-        loadPage(false);
-    }
-
     private void runSearch() {
         String q = search.getText().trim();
         if (q.isBlank()) return;
 
-        if (mode == Mode.HOME || mode == Mode.FAVORITES || mode == Mode.HISTORY) {
-            provider = preferredVodProvider(true);
-        }
+        detailOpen = false;
+        provider = preferredVodProvider(true);
         mode = Mode.SEARCH;
         query = q;
         page = 1;
         hasMore = true;
         loadedItems.clear();
-        refreshProviderChoices();
         updateNavigationState();
         updateHeader();
         loadPage(false);
@@ -387,7 +318,6 @@ final class MainFrame extends JFrame {
 
     private void loadHome() {
         ((CardLayout) contentStack.getLayout()).show(contentStack, Mode.HOME.name());
-        sourceWrap.setVisible(false);
         status.setText("Preparando tu inicio…");
         homeRoot.removeAll();
         homeRoot.add(buildHomeSkeleton());
@@ -401,11 +331,10 @@ final class MainFrame extends JFrame {
         activeWorker = new SwingWorker<HomeData, Void>() {
             @Override protected HomeData doInBackground() {
                 List<Models.ShowItem> history = UserData.getHistory();
-                List<Models.ShowItem> movies = safeLoad(() -> movieSource.movies(1), 10);
-                List<Models.ShowItem> series = safeLoad(() -> seriesSource.tvShows(1), 10);
-                List<Models.ShowItem> live = safeLoad(() -> liveSource.tvShows(1), 10);
-                return new HomeData(history.stream().limit(10).toList(), movies, series, live,
-                        movieSource.name(), seriesSource.name(), liveSource.name());
+                List<Models.ShowItem> movies = withSource(movieSource, safeLoad(() -> movieSource.movies(1), 10));
+                List<Models.ShowItem> series = withSource(seriesSource, safeLoad(() -> seriesSource.tvShows(1), 10));
+                List<Models.ShowItem> live = withSource(liveSource, safeLoad(() -> liveSource.tvShows(1), 10));
+                return new HomeData(history.stream().limit(10).toList(), movies, series, live);
             }
 
             @Override protected void done() {
@@ -422,16 +351,8 @@ final class MainFrame extends JFrame {
     }
 
     private JComponent buildHomeSkeleton() {
-        JPanel skeleton = Theme.surface();
-        skeleton.setLayout(new BoxLayout(skeleton, BoxLayout.Y_AXIS));
+        StreamingSkeleton skeleton = new StreamingSkeleton();
         skeleton.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JLabel title = Theme.heading("Cargando tu inicio…", 18f);
-        title.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JLabel detail = Theme.muted("Preparando películas, series y TV en vivo.");
-        detail.setAlignmentX(Component.LEFT_ALIGNMENT);
-        skeleton.add(title);
-        skeleton.add(Box.createVerticalStrut(7));
-        skeleton.add(detail);
         return skeleton;
     }
 
@@ -447,32 +368,32 @@ final class MainFrame extends JFrame {
                         ? data.series().get(0)
                         : !data.movies().isEmpty() ? data.movies().get(0) : null);
         if (hero != null) {
-            homeRoot.add(new HeroPanel(hero, this::openDetails));
+            homeRoot.add(new HeroPanel(hero, this::playHeroItem, this::openDetails));
             homeRoot.add(Box.createVerticalStrut(10));
         }
 
         if (!data.history().isEmpty()) {
-            homeRoot.add(homeSection("Continuar explorando", "Lo último que abriste", data.history()));
+            homeRoot.add(homeSection("Continuar viendo", "Retoma donde lo dejaste", data.history()));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
         if (!data.movies().isEmpty()) {
-            homeRoot.add(homeSection("Películas populares", data.movieSource(), data.movies()));
+            homeRoot.add(homeSection("Películas populares", "Títulos destacados del catálogo", data.movies()));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
         if (!data.series().isEmpty()) {
-            homeRoot.add(homeSection("Series populares", data.seriesSource(), data.series()));
+            homeRoot.add(homeSection("Series populares", "Historias para seguir viendo", data.series()));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
         if (!data.live().isEmpty()) {
-            homeRoot.add(homeSection("TV en vivo", data.liveSource(), data.live()));
+            homeRoot.add(homeSection("TV en vivo", "Canales disponibles ahora", data.live()));
         }
 
         if (homeRoot.getComponentCount() == 0) {
             homeRoot.add(stateCard("No pudimos cargar el inicio",
-                    "Prueba Películas, Series o TV en vivo desde la barra lateral.", null, null));
+                    "Prueba Películas, Series o TV desde la navegación superior.", null, null));
         }
 
         homeRoot.revalidate();
@@ -484,6 +405,7 @@ final class MainFrame extends JFrame {
         section.setOpaque(false);
         section.setAlignmentX(Component.LEFT_ALIGNMENT);
         section.setMaximumSize(new Dimension(Integer.MAX_VALUE, 270));
+        section.setBorder(new EmptyBorder(0, 34, 0, 34));
 
         JPanel heading = new JPanel(new BorderLayout());
         heading.setOpaque(false);
@@ -508,7 +430,7 @@ final class MainFrame extends JFrame {
         rail.setBorder(new EmptyBorder(1, 1, 8, 8));
 
         for (int i = 0; i < items.size(); i++) {
-            rail.add(new LandscapeCard(items.get(i), this::openDetails));
+            rail.add(cardFor(items.get(i)));
             if (i < items.size() - 1) rail.add(Box.createHorizontalStrut(12));
         }
 
@@ -568,14 +490,16 @@ final class MainFrame extends JFrame {
 
         activeWorker = new SwingWorker<List<Models.ShowItem>, Void>() {
             @Override protected List<Models.ShowItem> doInBackground() throws Exception {
-                return switch (requestMode) {
+                List<Models.ShowItem> items = switch (requestMode) {
                     case MOVIES -> requestProvider.movies(requestPage);
                     case SERIES, LIVE -> requestProvider.tvShows(requestPage);
                     case SEARCH -> requestProvider.search(requestQuery, requestPage);
                     case FAVORITES -> UserData.getFavorites();
-                    case HISTORY -> UserData.getHistory();
                     case HOME -> List.of();
                 };
+                return requestMode == Mode.FAVORITES
+                        ? items
+                        : withSource(requestProvider, items);
             }
 
             @Override protected void done() {
@@ -628,26 +552,32 @@ final class MainFrame extends JFrame {
 
         if (items.isEmpty()) {
             String title = switch (mode) {
-                case FAVORITES -> "Todavía no tienes favoritos";
-                case HISTORY -> "Aún no hay historial";
+                case FAVORITES -> "Todavía no tienes títulos en Mi lista";
                 default -> "No encontramos resultados";
             };
             String message = switch (mode) {
                 case FAVORITES -> "Guarda títulos desde su ficha y aparecerán aquí.";
-                case HISTORY -> "Tu historial se irá creando a medida que reproduzcas contenido.";
-                default -> "Prueba otra búsqueda o cambia la fuente.";
+                default -> "Prueba otra búsqueda.";
             };
             renderGridState(title, message, null, null);
             return;
         }
 
-        for (Models.ShowItem item : items) grid.add(new LandscapeCard(item, this::openDetails));
+        for (Models.ShowItem item : items) grid.add(cardFor(item));
         grid.revalidate();
         grid.repaint();
     }
 
+    private JComponent cardFor(Models.ShowItem item) {
+        String sourceId = item.sourceProviderId() != null
+                ? item.sourceProviderId()
+                : provider != null ? provider.id() : null;
+        double progress = UserData.progressFraction(sourceId, item);
+        return new LandscapeCard(item, this::openDetails, progress);
+    }
+
     private void renderLoading(String source) {
-        renderGridState("Cargando catálogo", "Consultando " + source + "…", null, null);
+        renderGridState("Cargando catálogo", "Preparando títulos…", null, null);
     }
 
     private void renderTmdbSetup() {
@@ -720,18 +650,65 @@ final class MainFrame extends JFrame {
 
     private void openSettings() {
         new SettingsDialog(this).setVisible(true);
+
         if (mode == Mode.HOME) {
             provider = preferredVodProvider(true);
             loadHome();
-        } else if (provider instanceof TmdbProvider) {
+        } else if (mode == Mode.MOVIES) {
+            provider = preferredVodProvider(true);
+            loadPage(false);
+        } else if (mode == Mode.SERIES) {
+            provider = preferredVodProvider(false);
+            loadPage(false);
+        } else if (mode == Mode.SEARCH && !(provider instanceof M3uLiveProvider)) {
+            provider = preferredVodProvider(true);
             loadPage(false);
         }
     }
 
+    private void playHeroItem(Models.ShowItem item) {
+        openDetails(item, true);
+    }
+
     private void openDetails(Models.ShowItem item) {
+        openDetails(item, false);
+    }
+
+    private void openDetails(Models.ShowItem item, boolean autoPlay) {
         Provider itemProvider = item.sourceProviderId() == null ? null : ProviderRegistry.get(item.sourceProviderId());
         if (itemProvider == null) itemProvider = provider;
-        new DetailDialog(this, itemProvider, item).setVisible(true);
+
+        detailHost.removeAll();
+        detailHost.add(new TitleDetailView(
+                this,
+                itemProvider,
+                item,
+                this::closeDetails,
+                autoPlay,
+                () -> homeNeedsRefresh = true
+        ), BorderLayout.CENTER);
+        detailHost.revalidate();
+        detailHost.repaint();
+
+        detailOpen = true;
+        sectionHeaderPanel.setVisible(false);
+        ((CardLayout) contentStack.getLayout()).show(contentStack, "DETAIL");
+    }
+
+    private void closeDetails() {
+        if (!detailOpen) return;
+        detailOpen = false;
+        updateHeader();
+
+        if (mode == Mode.HOME && homeNeedsRefresh) {
+            homeNeedsRefresh = false;
+            loadHome();
+            return;
+        }
+
+        ((CardLayout) contentStack.getLayout()).show(
+                contentStack,
+                mode == Mode.HOME ? Mode.HOME.name() : "CATALOG");
     }
 
     private void rebuildGridColumns() {
@@ -746,7 +723,6 @@ final class MainFrame extends JFrame {
         Theme.setNavSelected(seriesButton, mode == Mode.SERIES);
         Theme.setNavSelected(liveButton, mode == Mode.LIVE || (mode == Mode.SEARCH && provider instanceof M3uLiveProvider));
         Theme.setNavSelected(favoritesButton, mode == Mode.FAVORITES);
-        Theme.setNavSelected(historyButton, mode == Mode.HISTORY);
     }
 
     private void updateHeader() {
@@ -756,19 +732,19 @@ final class MainFrame extends JFrame {
             case SERIES -> "Series";
             case LIVE -> "TV en vivo";
             case SEARCH -> query.isBlank() ? "Resultados" : "Resultados para “" + query + "”";
-            case FAVORITES -> "Favoritos";
-            case HISTORY -> "Historial";
+            case FAVORITES -> "Mi lista";
         };
         sectionTitle.setText(title);
         sectionHeaderPanel.setVisible(mode != Mode.HOME);
 
         String subtitle = switch (mode) {
             case HOME -> "Películas, series y canales en un solo lugar";
-            case FAVORITES -> "Tu biblioteca guardada";
-            case HISTORY -> "Lo que abriste recientemente";
-            case LIVE -> provider == null ? "Canales en directo" : provider.name();
-            case SEARCH -> provider == null ? "Búsqueda" : "Buscando en " + provider.name();
-            default -> provider == null ? "" : provider.name();
+            case FAVORITES -> "Títulos que guardaste";
+            case LIVE -> "Canales en directo";
+            case SEARCH -> "Películas y series";
+            case MOVIES -> "Explora películas";
+            case SERIES -> "Explora series";
+            default -> "";
         };
         sectionSubtitle.setText(subtitle);
         status.setText(" ");
@@ -776,11 +752,10 @@ final class MainFrame extends JFrame {
 
     private void setBusy(boolean busy, String text) {
         status.setText(text);
-        for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton, favoritesButton, historyButton)) {
+        for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton, favoritesButton)) {
             button.setEnabled(!busy);
         }
         search.setEnabled(!busy);
-        providerBox.setEnabled(!busy);
         resetButton.setEnabled(!busy && page > 1);
         if (busy) nextButton.setEnabled(false);
     }
@@ -801,8 +776,16 @@ final class MainFrame extends JFrame {
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "escape-search");
         actions.put("escape-search", new AbstractAction() {
             @Override public void actionPerformed(ActionEvent e) {
-                if (mode == Mode.SEARCH) switchMode(Mode.HOME);
+                if (detailOpen) closeDetails();
+                else if (mode == Mode.SEARCH) switchMode(Mode.HOME);
                 else search.setText("");
+            }
+        });
+
+        input.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_DOWN_MASK), "navigate-back");
+        actions.put("navigate-back", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) {
+                if (detailOpen) closeDetails();
             }
         });
     }
@@ -810,6 +793,13 @@ final class MainFrame extends JFrame {
     @FunctionalInterface
     private interface Loader {
         List<Models.ShowItem> load() throws Exception;
+    }
+
+    private static List<Models.ShowItem> withSource(Provider source, List<Models.ShowItem> items) {
+        if (source == null || items == null || items.isEmpty()) return items == null ? List.of() : items;
+        return items.stream()
+                .map(item -> item.sourceProviderId() == null ? item.withSourceProviderId(source.id()) : item)
+                .toList();
     }
 
     private static List<Models.ShowItem> safeLoad(Loader loader, int limit) {
@@ -825,10 +815,7 @@ final class MainFrame extends JFrame {
             List<Models.ShowItem> history,
             List<Models.ShowItem> movies,
             List<Models.ShowItem> series,
-            List<Models.ShowItem> live,
-            String movieSource,
-            String seriesSource,
-            String liveSource
+            List<Models.ShowItem> live
     ) {}
 
     private static String escapeHtml(String value) {

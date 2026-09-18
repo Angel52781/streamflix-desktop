@@ -19,6 +19,9 @@ public final class UserDataTest {
             testProgressRules();
 
             setup();
+            testEpisodeProgressMetadata();
+
+            setup();
             testCorruptFilesDoNotPreventLoad(testDir);
 
             System.out.println("UserDataTest OK");
@@ -77,6 +80,31 @@ public final class UserDataTest {
 
         double progress = UserData.getProgressForTest("source-progress", item);
         require(progress == 45.0, "progress should not be overwritten by 0.0 updates. Was: " + progress);
+    }
+
+    private static void testEpisodeProgressMetadata() {
+        Models.ShowItem show = new Models.ShowItem(
+                "show1", "tv/5920", "The Mentalist", null, null, null, null,
+                null, null, Models.ShowType.TV_SHOW);
+        Models.Episode episode = new Models.Episode(
+                "tv/5920/season/2/episode/1", 2, 1, "Redemption", null, null);
+
+        UserData.recordEpisodeHistory("tmdb-en", show, episode, 123.0, 2400.0);
+
+        UserData.HistoryEntry entry = UserData.getHistoryEntry("tmdb-en", show);
+        require(entry != null, "episode history entry exists");
+        require("tv/5920/season/2/episode/1".equals(entry.mediaId()), "episode media id persisted");
+        require(Integer.valueOf(2).equals(entry.seasonNumber()), "season persisted");
+        require(Integer.valueOf(1).equals(entry.episodeNumber()), "episode persisted");
+        require(entry.progressSeconds() == 123.0, "episode progress persisted");
+        require(Math.abs(UserData.progressFraction("tmdb-en", show) - (123.0 / 2400.0)) < 0.0001,
+                "progress fraction computed");
+
+        UserData.loadForTests();
+        UserData.HistoryEntry reloaded = UserData.getHistoryEntry("tmdb-en", show);
+        require(reloaded != null, "episode history survives reload");
+        require(Integer.valueOf(2).equals(reloaded.seasonNumber()), "season survives reload");
+        require(Integer.valueOf(1).equals(reloaded.episodeNumber()), "episode survives reload");
     }
 
     private static void testCorruptFilesDoNotPreventLoad(Path testDir) throws Exception {

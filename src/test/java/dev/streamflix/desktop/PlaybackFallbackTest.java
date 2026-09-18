@@ -17,7 +17,7 @@ public final class PlaybackFallbackTest {
         Models.Server second = new Models.Server("two", "Server Two", "https://two.example/embed");
         AtomicInteger starts = new AtomicInteger();
 
-        Models.Server selected = DetailDialog.startFirstAvailable(
+        Models.Server selected = PlaybackFallback.startFirstAvailable(
                 List.of(first, second),
                 "Demo",
                 server -> new Models.Video("https://cdn.example/" + server.id() + ".m3u8"),
@@ -36,7 +36,7 @@ public final class PlaybackFallbackTest {
         AtomicInteger resolved = new AtomicInteger();
         AtomicInteger starts = new AtomicInteger();
 
-        Models.Server selected = DetailDialog.startFirstAvailable(
+        Models.Server selected = PlaybackFallback.startFirstAvailable(
                 List.of(first, second),
                 "Demo",
                 server -> {
@@ -57,7 +57,7 @@ public final class PlaybackFallbackTest {
         Models.Server second = new Models.Server("two", "Two", "https://two.example/embed");
         AtomicInteger resolved = new AtomicInteger();
 
-        Models.Server selected = DetailDialog.startFirstAvailable(
+        Models.Server selected = PlaybackFallback.startFirstAvailable(
                 List.of(first, second),
                 "Demo",
                 server -> {

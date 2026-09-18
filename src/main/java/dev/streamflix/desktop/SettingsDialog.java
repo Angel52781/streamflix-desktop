@@ -15,6 +15,12 @@ final class SettingsDialog extends JDialog {
     private final JLabel status = Theme.muted(" ");
     private final JButton testButton = Theme.button("Probar credencial");
     private final JButton saveButton = Theme.primaryButton("Guardar");
+    private final JComboBox<String> catalogLanguage = new JComboBox<>(new String[]{"Español", "English"});
+    private final JCheckBox startMaximized = new JCheckBox("Iniciar Streamflix maximizado");
+    private final JComboBox<String> audioLanguage = new JComboBox<>(
+            new String[]{"Automático", "Español", "English"});
+    private final JComboBox<String> subtitleLanguage = new JComboBox<>(
+            new String[]{"Español", "English", "Desactivados"});
 
     SettingsDialog(Window owner) {
         super(owner, "Configuración · Streamflix", ModalityType.APPLICATION_MODAL);
@@ -50,20 +56,75 @@ final class SettingsDialog extends JDialog {
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.setBorder(new EmptyBorder(18, 0, 12, 0));
+        tabs.addTab("General", buildGeneralPanel());
+        tabs.addTab("Reproductor", buildPlayerPanel());
         tabs.addTab("TMDb", buildTmdbPanel());
         tabs.addTab("Fuentes", buildSourcesPanel());
-        tabs.addTab("Reproductor", buildPlayerPanel());
+        tabs.addTab("Datos", buildDataPanel());
+        tabs.addTab("Acerca de", buildAboutPanel());
         root.add(tabs, BorderLayout.CENTER);
 
-        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JPanel footer = new JPanel(new BorderLayout(12, 0));
         footer.setOpaque(false);
+
+        status.setFont(Theme.FONT.deriveFont(12f));
+        footer.add(status, BorderLayout.CENTER);
+
+        JPanel footerActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        footerActions.setOpaque(false);
         JButton close = Theme.button("Cerrar");
         close.addActionListener(e -> dispose());
         saveButton.addActionListener(e -> save());
-        footer.add(close);
-        footer.add(saveButton);
+        footerActions.add(close);
+        footerActions.add(saveButton);
+        footer.add(footerActions, BorderLayout.EAST);
+
         root.add(footer, BorderLayout.SOUTH);
         return root;
+    }
+
+    private JComponent buildGeneralPanel() {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setBackground(Theme.BG);
+        wrapper.setBorder(new EmptyBorder(12, 4, 8, 4));
+
+        JPanel general = Theme.surface();
+        general.setLayout(new BoxLayout(general, BoxLayout.Y_AXIS));
+
+        JLabel heading = Theme.heading("Experiencia", 18f);
+        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
+        general.add(heading);
+        general.add(Box.createVerticalStrut(8));
+
+        JLabel explanation = Theme.muted(
+                "<html><body style='width:640px'>"
+                + "Streamflix usa TMDb como catálogo principal. Las fuentes de reproducción se resuelven detrás de escena."
+                + "</body></html>");
+        explanation.setAlignmentX(Component.LEFT_ALIGNMENT);
+        general.add(explanation);
+        general.add(Box.createVerticalStrut(18));
+
+        JLabel languageLabel = new JLabel("Idioma del catálogo");
+        languageLabel.setForeground(Theme.TEXT);
+        languageLabel.setFont(Theme.FONT_BOLD.deriveFont(13f));
+        languageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        general.add(languageLabel);
+        general.add(Box.createVerticalStrut(7));
+
+        catalogLanguage.setMaximumSize(new Dimension(220, 38));
+        catalogLanguage.setAlignmentX(Component.LEFT_ALIGNMENT);
+        catalogLanguage.setToolTipText("Cambia títulos, descripciones y metadata de TMDb.");
+        general.add(catalogLanguage);
+        general.add(Box.createVerticalStrut(20));
+
+        startMaximized.setOpaque(false);
+        startMaximized.setForeground(Theme.TEXT);
+        startMaximized.setFont(Theme.FONT.deriveFont(13f));
+        startMaximized.setAlignmentX(Component.LEFT_ALIGNMENT);
+        general.add(startMaximized);
+
+        wrapper.add(general, BorderLayout.NORTH);
+        return wrapper;
     }
 
     private JComponent buildTmdbPanel() {
@@ -139,11 +200,6 @@ final class SettingsDialog extends JDialog {
         actions.add(testButton);
         tmdb.add(actions, c);
 
-        c.gridy++;
-        c.insets = new Insets(14, 0, 0, 0);
-        status.setFont(Theme.FONT.deriveFont(12f));
-        tmdb.add(status, c);
-
         wrapper.add(tmdb, BorderLayout.NORTH);
         return wrapper;
     }
@@ -156,10 +212,9 @@ final class SettingsDialog extends JDialog {
 
         JLabel explanation = Theme.muted(
                 "<html><body style='width:650px'>"
-                + "<b>Modelo actual:</b> Streamflix navega un catálogo a la vez. "
-                + "El selector <b>Catálogo</b> o <b>Lista</b> de la pantalla principal cambia la fuente. "
-                + "TMDb aporta metadata; su reproducción usa servidores compatibles detrás de escena. "
-                + "Los catálogos alternativos incluyen su propia metadata y servidores."
+                + "<b>Modelo actual:</b> TMDb es el catálogo principal de Streamflix. "
+                + "Las fuentes de reproducción se resuelven automáticamente detrás de escena. "
+                + "Esta sección existe para diagnóstico y mantenimiento; no necesitas elegir una fuente para ver contenido."
                 + "</body></html>");
         explanation.setAlignmentX(Component.LEFT_ALIGNMENT);
         root.add(explanation);
@@ -210,7 +265,7 @@ final class SettingsDialog extends JDialog {
                     : provider.supportsMovies() && provider.supportsTvShows()
                         ? "Películas · Series"
                         : provider.supportsMovies() ? "Películas" : "Series";
-            JLabel state = Theme.muted(capability + "   ·   Activo");
+            JLabel state = Theme.muted(capability + "   ·   Registrado");
             state.setFont(Theme.FONT.deriveFont(11.5f));
             row.add(state, BorderLayout.EAST);
 
@@ -250,17 +305,155 @@ final class SettingsDialog extends JDialog {
         JLabel behavior = Theme.muted(
                 "<html><body style='width:640px'>"
                 + "Automático prueba servidores hasta que uno inicia realmente. "
-                + "La interfaz de Streamflix controla pausa, salto temporal, volumen, pista de audio y subtítulos. "
-                + "Preferencia de subtítulos: español → inglés."
+                + "La interfaz de Streamflix controla pausa, salto temporal, volumen, pista de audio y subtítulos."
                 + "</body></html>");
         behavior.setAlignmentX(Component.LEFT_ALIGNMENT);
         player.add(behavior);
+        player.add(Box.createVerticalStrut(18));
+
+        JLabel audioLabel = new JLabel("Idioma de audio preferido");
+        audioLabel.setForeground(Theme.TEXT);
+        audioLabel.setFont(Theme.FONT_BOLD.deriveFont(13f));
+        audioLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        player.add(audioLabel);
+        player.add(Box.createVerticalStrut(7));
+        audioLanguage.setMaximumSize(new Dimension(220, 38));
+        audioLanguage.setAlignmentX(Component.LEFT_ALIGNMENT);
+        player.add(audioLanguage);
+        player.add(Box.createVerticalStrut(16));
+
+        JLabel subtitleLabel = new JLabel("Subtítulos preferidos");
+        subtitleLabel.setForeground(Theme.TEXT);
+        subtitleLabel.setFont(Theme.FONT_BOLD.deriveFont(13f));
+        subtitleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        player.add(subtitleLabel);
+        player.add(Box.createVerticalStrut(7));
+        subtitleLanguage.setMaximumSize(new Dimension(220, 38));
+        subtitleLanguage.setAlignmentX(Component.LEFT_ALIGNMENT);
+        player.add(subtitleLanguage);
 
         wrapper.add(player, BorderLayout.NORTH);
         return wrapper;
     }
 
+    private JComponent buildDataPanel() {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setBackground(Theme.BG);
+        wrapper.setBorder(new EmptyBorder(12, 4, 8, 4));
+
+        JPanel data = Theme.surface();
+        data.setLayout(new BoxLayout(data, BoxLayout.Y_AXIS));
+
+        JLabel heading = Theme.heading("Datos locales", 18f);
+        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
+        data.add(heading);
+        data.add(Box.createVerticalStrut(8));
+
+        JLabel explanation = Theme.muted(
+                "<html><body style='width:640px'>"
+                + "Favoritos, historial y progreso de reproducción se guardan localmente en %APPDATA%\\Streamflix."
+                + "</body></html>");
+        explanation.setAlignmentX(Component.LEFT_ALIGNMENT);
+        data.add(explanation);
+        data.add(Box.createVerticalStrut(18));
+
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        actions.setOpaque(false);
+        actions.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JButton clearHistory = Theme.button("Borrar historial y progreso");
+        clearHistory.addActionListener(e -> {
+            int result = JOptionPane.showConfirmDialog(
+                    this,
+                    "Se eliminará el historial y todo el progreso de reproducción guardado.",
+                    "Borrar historial",
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.WARNING_MESSAGE
+            );
+            if (result == JOptionPane.OK_OPTION) {
+                UserData.clearHistory();
+                status.setForeground(new Color(104, 211, 145));
+                status.setText("Historial y progreso eliminados.");
+            }
+        });
+
+        JButton clearFavorites = Theme.button("Borrar Mi lista");
+        clearFavorites.addActionListener(e -> {
+            int result = JOptionPane.showConfirmDialog(
+                    this,
+                    "Se eliminarán todos los títulos guardados en Mi lista.",
+                    "Borrar Mi lista",
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.WARNING_MESSAGE
+            );
+            if (result == JOptionPane.OK_OPTION) {
+                UserData.clearFavorites();
+                status.setForeground(new Color(104, 211, 145));
+                status.setText("Mi lista fue vaciada.");
+            }
+        });
+
+        actions.add(clearHistory);
+        actions.add(clearFavorites);
+        data.add(actions);
+
+        wrapper.add(data, BorderLayout.NORTH);
+        return wrapper;
+    }
+
+    private JComponent buildAboutPanel() {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setBackground(Theme.BG);
+        wrapper.setBorder(new EmptyBorder(12, 4, 8, 4));
+
+        JPanel about = Theme.surface();
+        about.setLayout(new BoxLayout(about, BoxLayout.Y_AXIS));
+
+        JLabel heading = Theme.heading("Streamflix Desktop", 20f);
+        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
+        about.add(heading);
+        about.add(Box.createVerticalStrut(6));
+
+        JLabel version = Theme.muted("Versión " + AppVersion.current());
+        version.setAlignmentX(Component.LEFT_ALIGNMENT);
+        about.add(version);
+        about.add(Box.createVerticalStrut(14));
+
+        JLabel description = Theme.muted(
+                "<html><body style='width:640px'>"
+                + "Cliente de streaming para Windows basado en Java/Swing y mpv, "
+                + "con catálogo TMDb y fuentes de reproducción compatibles."
+                + "</body></html>");
+        description.setAlignmentX(Component.LEFT_ALIGNMENT);
+        about.add(description);
+        about.add(Box.createVerticalStrut(18));
+
+        JButton github = Theme.button("Abrir repositorio en GitHub");
+        github.setAlignmentX(Component.LEFT_ALIGNMENT);
+        github.addActionListener(e -> openUri(
+                "https://github.com/Angel52781/streamflix-desktop",
+                "No pude abrir el repositorio."));
+        about.add(github);
+
+        wrapper.add(about, BorderLayout.NORTH);
+        return wrapper;
+    }
+
     private void loadCurrent() {
+        catalogLanguage.setSelectedIndex("en".equals(TmdbSettings.catalogLanguage()) ? 1 : 0);
+        startMaximized.setSelected(PlaybackSettings.startMaximized());
+
+        audioLanguage.setSelectedIndex(switch (PlaybackSettings.audioLanguage()) {
+            case "es" -> 1;
+            case "en" -> 2;
+            default -> 0;
+        });
+        subtitleLanguage.setSelectedIndex(switch (PlaybackSettings.subtitleLanguage()) {
+            case "en" -> 1;
+            case "off" -> 2;
+            default -> 0;
+        });
+
         try {
             String key = TmdbSettings.localApiKey();
             tmdbKey.setText(key);
@@ -324,6 +517,20 @@ final class SettingsDialog extends JDialog {
         char[] chars = tmdbKey.getPassword();
         try {
             TmdbSettings.saveApiKey(new String(chars));
+            TmdbSettings.saveCatalogLanguage(catalogLanguage.getSelectedIndex() == 1 ? "en" : "es");
+            PlaybackSettings.save(
+                    startMaximized.isSelected(),
+                    switch (audioLanguage.getSelectedIndex()) {
+                        case 1 -> "es";
+                        case 2 -> "en";
+                        default -> "auto";
+                    },
+                    switch (subtitleLanguage.getSelectedIndex()) {
+                        case 1 -> "en";
+                        case 2 -> "off";
+                        default -> "es";
+                    }
+            );
             status.setForeground(new Color(104, 211, 145));
             status.setText(TmdbSettings.environmentOverrideActive()
                     ? "Guardada. La variable de entorno seguirá teniendo prioridad."
@@ -338,14 +545,18 @@ final class SettingsDialog extends JDialog {
     }
 
     private void openTmdbSite() {
+        openUri(TMDB_API_URL, "No pude abrir el navegador. Ve a themoviedb.org → Settings → API.");
+    }
+
+    private void openUri(String uri, String failureMessage) {
         try {
             if (!Desktop.isDesktopSupported()) throw new UnsupportedOperationException();
-            Desktop.getDesktop().browse(URI.create(TMDB_API_URL));
+            Desktop.getDesktop().browse(URI.create(uri));
             status.setForeground(Theme.MUTED);
-            status.setText("Abrí la página de API de TMDb en tu navegador.");
+            status.setText("Abrí el enlace en tu navegador.");
         } catch (Exception ex) {
             status.setForeground(Theme.DANGER);
-            status.setText("No pude abrir el navegador. Ve a themoviedb.org → Settings → API.");
+            status.setText(failureMessage);
         }
     }
 }
