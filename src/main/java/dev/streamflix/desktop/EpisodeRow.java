@@ -65,7 +65,7 @@ final class EpisodeRow extends JPanel {
         actions.setOpaque(false);
         actions.setLayout(new BoxLayout(actions, BoxLayout.Y_AXIS));
 
-        JButton play = Theme.primaryButton(this.progress > 0.02 && this.progress < 0.995
+        JButton play = Theme.primaryButton(this.progress > 0.0001 && this.progress < 0.995
                 ? "Continuar"
                 : "Reproducir");
         play.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -109,7 +109,7 @@ final class EpisodeRow extends JPanel {
             g2.setColor(hovered ? new Color(24, 29, 40) : new Color(16, 19, 26));
             g2.fillRect(0, 0, getWidth(), getHeight());
 
-            if (progress > 0.01 && progress < 0.995) {
+            if (progress > 0.0001 && progress < 0.995) {
                 int barHeight = 4;
                 int y = getHeight() - barHeight;
                 g2.setColor(new Color(255, 255, 255, 55));

@@ -19,10 +19,12 @@ public final class MpvPlayerTest {
         System.setProperty("streamflix.data.dir", settingsDir.toString());
         try {
             testCommandHeadersAndSubtitlePreference();
+            testLanguageAliasesDoNotConfuseItalianWithSpanish();
             testPlaybackPreferenceOverrides();
             testEmbeddedCommand();
             testPlaybackNetworkProfile();
             testProgrammaticTimelineRefreshDoesNotSeek();
+            testPlayerChromeOverlayKeepsMediaStable();
             testImmediateFailureRejected();
             testNewPlaybackStopsPrevious();
             testStaleRequestCannotReplaceNewerIntent();
@@ -53,9 +55,23 @@ public final class MpvPlayerTest {
         int d = command.indexOf("--sub-file=default.vtt");
         int es = command.indexOf("--sub-file=es.vtt");
         int en = command.indexOf("--sub-file=en.vtt");
-        require(d >= 0 && d < es && es < en, "default then Spanish then English subtitle order");
+        require(es >= 0 && es < en && en < d,
+                "explicit Spanish preference outranks source default and English");
         require(command.contains("--force-media-title=Title Line"), "title sanitized");
         require(command.contains("--hls-bitrate=4000000"), "automatic quality caps HLS bitrate");
+    }
+
+    private static void testLanguageAliasesDoNotConfuseItalianWithSpanish() {
+        require(MediaLanguage.matches("spa", "", "es"), "spa matches Spanish");
+        require(MediaLanguage.matches("es-ES", "", "es"), "es-ES matches Spanish");
+        require(MediaLanguage.matches("", "Spanish", "es"), "Spanish title matches Spanish");
+        require(MediaLanguage.matches("", "Español Latino", "es"), "Español title matches Spanish");
+        require(MediaLanguage.matches("eng", "", "en"), "eng matches English");
+        require(MediaLanguage.matches("", "English", "en"), "English title matches English");
+        require(!MediaLanguage.matches("ita", "Italiano", "es"),
+                "Italian metadata must never match Spanish");
+        require(!MediaLanguage.matches("it", "Italian", "es"),
+                "Italian language code must never match Spanish");
     }
 
     private static void testPlaybackPreferenceOverrides() {
@@ -115,6 +131,29 @@ public final class MpvPlayerTest {
                 "timeline without duration cannot seek");
         require(EmbeddedPlayerWindow.shouldSeekTimeline(false, false, 2400),
                 "user timeline selection can seek");
+    }
+
+    private static void testPlayerChromeOverlayKeepsMediaStable() {
+        javax.swing.JLayeredPane root = new javax.swing.JLayeredPane();
+        javax.swing.JPanel media = new javax.swing.JPanel();
+        javax.swing.JPanel top = new javax.swing.JPanel();
+        javax.swing.JPanel bottom = new javax.swing.JPanel();
+
+        root.setSize(1920, 1080);
+        top.setPreferredSize(new java.awt.Dimension(1920, 64));
+        bottom.setPreferredSize(new java.awt.Dimension(1920, 96));
+
+        EmbeddedPlayerWindow.layoutPlayerLayers(root, media, top, bottom);
+        java.awt.Rectangle before = media.getBounds();
+
+        top.setVisible(false);
+        bottom.setVisible(false);
+        EmbeddedPlayerWindow.layoutPlayerLayers(root, media, top, bottom);
+
+        require(before.equals(media.getBounds()),
+                "hiding player chrome must never resize the video surface");
+        require(before.equals(new java.awt.Rectangle(0, 0, 1920, 1080)),
+                "video surface always occupies the full player area");
     }
 
     private static void testImmediateFailureRejected() throws Exception {

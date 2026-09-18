@@ -3,7 +3,6 @@ package dev.streamflix.desktop;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
-import java.text.Normalizer;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
@@ -245,27 +244,10 @@ final class MpvPlayer {
         String preferred = PlaybackSettings.subtitleLanguage();
         return subtitles.stream()
                 .filter(s -> s != null && s.file() != null && !s.file().isBlank())
-                .sorted(Comparator.comparingInt((Models.Subtitle s) -> s.isDefault() ? 0 : 1)
-                        .thenComparingInt(s -> languageRank(s.label(), preferred)))
+                .sorted(Comparator.comparingInt((Models.Subtitle s) ->
+                                MediaLanguage.rank(null, s.label(), preferred))
+                        .thenComparingInt(s -> s.isDefault() ? 0 : 1))
                 .toList();
-    }
-
-    private static int languageRank(String label, String preferred) {
-        if (label == null) return 2;
-        String normalized = Normalizer.normalize(label, Normalizer.Form.NFD)
-                .replaceAll("\\p{M}+", "").toLowerCase(Locale.ROOT);
-        Set<String> words = new HashSet<>(Arrays.asList(normalized.split("[^a-z]+")));
-        boolean spanish = !Collections.disjoint(words, Set.of("spanish", "espanol", "es", "spa"));
-        boolean english = !Collections.disjoint(words, Set.of("english", "ingles", "en", "eng"));
-
-        if ("en".equals(preferred)) {
-            if (english) return 0;
-            if (spanish) return 1;
-        } else {
-            if (spanish) return 0;
-            if (english) return 1;
-        }
-        return 2;
     }
 
     static int smoke(Models.Video video) throws Exception {
