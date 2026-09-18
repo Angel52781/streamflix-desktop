@@ -23,18 +23,20 @@ final class MainFrame extends JFrame {
     private final JPanel grid = new JPanel();
     private final JPanel homeRoot = new JPanel();
     private final JPanel pagingBar = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
+    private final JScrollPane catalogScroll = new JScrollPane();
 
     private final JLabel sectionTitle = Theme.heading("Inicio", 30f);
     private final JLabel sectionSubtitle = Theme.muted("Tu contenido, sin ruido");
     private final JLabel status = Theme.muted(" ");
+    private final JPanel sectionHeaderPanel = new JPanel(new BorderLayout());
     private final JTextField search = new JTextField(27);
 
-    private final JButton homeButton = Theme.navButton("Inicio");
-    private final JButton moviesButton = Theme.navButton("Películas");
-    private final JButton seriesButton = Theme.navButton("Series");
-    private final JButton liveButton = Theme.navButton("TV en vivo");
-    private final JButton favoritesButton = Theme.navButton("Favoritos");
-    private final JButton historyButton = Theme.navButton("Historial");
+    private final JButton homeButton = Theme.topNavButton("Inicio");
+    private final JButton moviesButton = Theme.topNavButton("Películas");
+    private final JButton seriesButton = Theme.topNavButton("Series");
+    private final JButton liveButton = Theme.topNavButton("TV");
+    private final JButton favoritesButton = Theme.topNavButton("Favoritos");
+    private final JButton historyButton = Theme.topNavButton("Historial");
 
     private final JButton resetButton = Theme.button("Volver al inicio");
     private final JButton nextButton = Theme.button("Cargar más");
@@ -44,6 +46,7 @@ final class MainFrame extends JFrame {
     private Mode mode = Mode.HOME;
     private int page = 1;
     private String query = "";
+    private boolean hasMore = true;
     private SwingWorker<?, Void> activeWorker;
 
     MainFrame(List<Provider> providers) {
@@ -60,13 +63,13 @@ final class MainFrame extends JFrame {
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) { MpvPlayer.shutdown(); }
         });
-        setMinimumSize(new Dimension(1080, 700));
-        setSize(1420, 880);
+        setMinimumSize(new Dimension(1180, 720));
+        setSize(1480, 900);
         setLocationRelativeTo(null);
         getContentPane().setBackground(Theme.BG);
         setLayout(new BorderLayout());
 
-        add(buildSidebar(), BorderLayout.WEST);
+        wireNavigation();
         add(buildWorkspace(), BorderLayout.CENTER);
 
         addComponentListener(new ComponentAdapter() {
@@ -87,104 +90,94 @@ final class MainFrame extends JFrame {
         finally { super.dispose(); }
     }
 
-    private JComponent buildSidebar() {
-        JPanel sidebar = new JPanel(new BorderLayout());
-        sidebar.setBackground(Theme.SIDEBAR);
-        sidebar.setPreferredSize(new Dimension(214, 0));
-        sidebar.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.BORDER));
-
-        JPanel brand = new JPanel();
-        brand.setOpaque(false);
-        brand.setLayout(new BoxLayout(brand, BoxLayout.Y_AXIS));
-        brand.setBorder(new EmptyBorder(26, 22, 20, 18));
-
-        JLabel logo = new JLabel("STREAMFLIX");
-        logo.setForeground(Theme.TEXT);
-        logo.setFont(Theme.FONT_BOLD.deriveFont(21f));
-        logo.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        JLabel edition = Theme.eyebrow("Desktop");
-        edition.setForeground(Theme.ACCENT);
-        edition.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        brand.add(logo);
-        brand.add(Box.createVerticalStrut(3));
-        brand.add(edition);
-        sidebar.add(brand, BorderLayout.NORTH);
-
-        JPanel nav = new JPanel();
-        nav.setOpaque(false);
-        nav.setLayout(new BoxLayout(nav, BoxLayout.Y_AXIS));
-        nav.setBorder(new EmptyBorder(10, 14, 14, 14));
-
-        JLabel browse = Theme.eyebrow("Explorar");
-        browse.setAlignmentX(Component.LEFT_ALIGNMENT);
-        nav.add(browse);
-        nav.add(Box.createVerticalStrut(8));
-
-        for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton)) {
-            button.setAlignmentX(Component.LEFT_ALIGNMENT);
-            nav.add(button);
-            nav.add(Box.createVerticalStrut(4));
-        }
-
-        nav.add(Box.createVerticalStrut(18));
-        JLabel library = Theme.eyebrow("Tu biblioteca");
-        library.setAlignmentX(Component.LEFT_ALIGNMENT);
-        nav.add(library);
-        nav.add(Box.createVerticalStrut(8));
-
-        for (JButton button : List.of(favoritesButton, historyButton)) {
-            button.setAlignmentX(Component.LEFT_ALIGNMENT);
-            nav.add(button);
-            nav.add(Box.createVerticalStrut(4));
-        }
-
+    private void wireNavigation() {
         homeButton.addActionListener(e -> switchMode(Mode.HOME));
         moviesButton.addActionListener(e -> switchMode(Mode.MOVIES));
         seriesButton.addActionListener(e -> switchMode(Mode.SERIES));
         liveButton.addActionListener(e -> switchMode(Mode.LIVE));
         favoritesButton.addActionListener(e -> switchMode(Mode.FAVORITES));
         historyButton.addActionListener(e -> switchMode(Mode.HISTORY));
-
-        sidebar.add(nav, BorderLayout.CENTER);
-
-        JPanel bottom = new JPanel();
-        bottom.setOpaque(false);
-        bottom.setLayout(new BoxLayout(bottom, BoxLayout.Y_AXIS));
-        bottom.setBorder(new EmptyBorder(12, 14, 20, 14));
-
-        JButton settings = Theme.navButton("Configuración");
-        settings.setAlignmentX(Component.LEFT_ALIGNMENT);
-        settings.addActionListener(e -> openSettings());
-        bottom.add(settings);
-        bottom.add(Box.createVerticalStrut(12));
-
-        JLabel shortcut = Theme.muted("Ctrl + F  Buscar");
-        shortcut.setFont(Theme.FONT.deriveFont(11f));
-        shortcut.setAlignmentX(Component.LEFT_ALIGNMENT);
-        bottom.add(shortcut);
-
-        sidebar.add(bottom, BorderLayout.SOUTH);
-        return sidebar;
     }
 
     private JComponent buildWorkspace() {
         JPanel workspace = new JPanel(new BorderLayout());
         workspace.setBackground(Theme.BG);
-        workspace.add(buildTopbar(), BorderLayout.NORTH);
+
+        JPanel north = new JPanel();
+        north.setBackground(Theme.BG);
+        north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+        north.add(buildTopbar());
+        north.add(buildSectionHeader());
+
+        workspace.add(north, BorderLayout.NORTH);
         workspace.add(buildContent(), BorderLayout.CENTER);
         return workspace;
     }
 
     private JComponent buildTopbar() {
-        JPanel top = new JPanel(new BorderLayout(28, 0));
-        top.setBackground(Theme.BG);
-        top.setBorder(new EmptyBorder(26, 34, 16, 34));
+        JPanel top = new JPanel(new BorderLayout(18, 0));
+        top.setBackground(new Color(8, 10, 15));
+        top.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER),
+                new EmptyBorder(12, 24, 12, 24)));
+
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        left.setOpaque(false);
+
+        JLabel logo = new JLabel("STREAMFLIX");
+        logo.setForeground(Theme.ACCENT);
+        logo.setFont(Theme.FONT_BOLD.deriveFont(20f));
+        logo.setBorder(new EmptyBorder(0, 0, 0, 12));
+        left.add(logo);
+
+        for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton, favoritesButton, historyButton)) {
+            left.add(button);
+        }
+        top.add(left, BorderLayout.WEST);
+
+        JPanel tools = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        tools.setOpaque(false);
+
+        sourceWrap.setOpaque(false);
+        sourceWrap.setBorder(new EmptyBorder(0, 0, 0, 2));
+        sourceLabel.setFont(Theme.FONT.deriveFont(11.5f));
+        sourceWrap.add(sourceLabel, BorderLayout.WEST);
+
+        providerBox.setPreferredSize(new Dimension(175, 36));
+        providerBox.setToolTipText("El catálogo elegido determina dónde se buscan los títulos.");
+        providerBox.addActionListener(e -> {
+            if (!updatingProviderBox) switchProvider(providerBox.getSelectedIndex());
+        });
+        sourceWrap.add(providerBox, BorderLayout.CENTER);
+        tools.add(sourceWrap);
+
+        search.putClientProperty("JTextField.placeholderText", "Buscar títulos");
+        search.putClientProperty("JTextField.showClearButton", true);
+        search.setPreferredSize(new Dimension(245, 38));
+        search.setToolTipText("Buscar en el catálogo seleccionado");
+        search.addActionListener(e -> runSearch());
+        tools.add(search);
+
+        JButton searchButton = Theme.primaryButton("Buscar");
+        searchButton.addActionListener(e -> runSearch());
+        tools.add(searchButton);
+
+        JButton settings = Theme.button("Ajustes");
+        settings.addActionListener(e -> openSettings());
+        tools.add(settings);
+
+        top.add(tools, BorderLayout.EAST);
+        return top;
+    }
+
+    private JComponent buildSectionHeader() {
+        sectionHeaderPanel.setBackground(Theme.BG);
+        sectionHeaderPanel.setBorder(new EmptyBorder(18, 34, 10, 34));
 
         JPanel heading = new JPanel();
         heading.setOpaque(false);
         heading.setLayout(new BoxLayout(heading, BoxLayout.Y_AXIS));
+
         sectionTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
         sectionSubtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
         sectionSubtitle.setFont(Theme.FONT.deriveFont(13f));
@@ -196,41 +189,9 @@ final class MainFrame extends JFrame {
         heading.add(sectionSubtitle);
         heading.add(Box.createVerticalStrut(3));
         heading.add(status);
-        top.add(heading, BorderLayout.WEST);
 
-        JPanel tools = new JPanel();
-        tools.setOpaque(false);
-        tools.setLayout(new BoxLayout(tools, BoxLayout.Y_AXIS));
-
-        JPanel searchRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        searchRow.setOpaque(false);
-
-        search.putClientProperty("JTextField.placeholderText", "Buscar películas, series o canales");
-        search.putClientProperty("JTextField.showClearButton", true);
-        search.setPreferredSize(new Dimension(330, 40));
-        search.setToolTipText("Buscar en la fuente seleccionada");
-        search.addActionListener(e -> runSearch());
-
-        JButton searchButton = Theme.primaryButton("Buscar");
-        searchButton.addActionListener(e -> runSearch());
-
-        sourceWrap.setOpaque(false);
-        sourceWrap.setBorder(new EmptyBorder(0, 0, 0, 4));
-        sourceLabel.setFont(Theme.FONT.deriveFont(12f));
-        sourceWrap.add(sourceLabel, BorderLayout.WEST);
-        providerBox.setPreferredSize(new Dimension(205, 38));
-        providerBox.setToolTipText("El catálogo elegido determina dónde se buscan los títulos.");
-        providerBox.addActionListener(e -> {
-            if (!updatingProviderBox) switchProvider(providerBox.getSelectedIndex());
-        });
-        sourceWrap.add(providerBox, BorderLayout.CENTER);
-
-        searchRow.add(sourceWrap);
-        searchRow.add(search);
-        searchRow.add(searchButton);
-        tools.add(searchRow);
-        top.add(tools, BorderLayout.EAST);
-        return top;
+        sectionHeaderPanel.add(heading, BorderLayout.WEST);
+        return sectionHeaderPanel;
     }
 
     private JComponent buildContent() {
@@ -260,11 +221,14 @@ final class MainFrame extends JFrame {
         pagingBar.add(nextButton);
         catalogBody.add(pagingBar, BorderLayout.SOUTH);
 
-        JScrollPane catalogScroll = new JScrollPane(catalogBody);
+        catalogScroll.setViewportView(catalogBody);
         catalogScroll.setBorder(null);
         catalogScroll.getViewport().setBackground(Theme.BG);
         catalogScroll.getVerticalScrollBar().setUnitIncrement(30);
         catalogScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        catalogScroll.getVerticalScrollBar().addAdjustmentListener(e -> maybeLoadMore());
+
+        pagingBar.setVisible(false);
 
         homeRoot.setBackground(Theme.BG);
         homeRoot.setLayout(new BoxLayout(homeRoot, BoxLayout.Y_AXIS));
@@ -291,6 +255,7 @@ final class MainFrame extends JFrame {
 
         mode = newMode;
         page = 1;
+        hasMore = true;
         query = "";
         loadedItems.clear();
         search.setText("");
@@ -395,6 +360,7 @@ final class MainFrame extends JFrame {
         if (activeWorker != null && !activeWorker.isDone()) activeWorker.cancel(true);
         provider = selected;
         page = 1;
+        hasMore = true;
         loadedItems.clear();
         updateHeader();
         loadPage(false);
@@ -410,6 +376,7 @@ final class MainFrame extends JFrame {
         mode = Mode.SEARCH;
         query = q;
         page = 1;
+        hasMore = true;
         loadedItems.clear();
         refreshProviderChoices();
         updateNavigationState();
@@ -470,18 +437,26 @@ final class MainFrame extends JFrame {
     private void renderHome(HomeData data) {
         homeRoot.removeAll();
 
+        Models.ShowItem hero = !data.series().isEmpty()
+                ? data.series().get(0)
+                : !data.movies().isEmpty() ? data.movies().get(0) : null;
+        if (hero != null) {
+            homeRoot.add(new HeroPanel(hero, this::openDetails));
+            homeRoot.add(Box.createVerticalStrut(28));
+        }
+
         if (!data.history().isEmpty()) {
-            homeRoot.add(homeSection("Vistos recientemente", "Retoma lo último que abriste", data.history()));
+            homeRoot.add(homeSection("Continuar explorando", "Lo último que abriste", data.history()));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
         if (!data.movies().isEmpty()) {
-            homeRoot.add(homeSection("Películas", data.movieSource(), data.movies()));
+            homeRoot.add(homeSection("Películas populares", data.movieSource(), data.movies()));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
         if (!data.series().isEmpty()) {
-            homeRoot.add(homeSection("Series", data.seriesSource(), data.series()));
+            homeRoot.add(homeSection("Series populares", data.seriesSource(), data.series()));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
@@ -502,7 +477,7 @@ final class MainFrame extends JFrame {
         JPanel section = new JPanel(new BorderLayout(0, 12));
         section.setOpaque(false);
         section.setAlignmentX(Component.LEFT_ALIGNMENT);
-        section.setMaximumSize(new Dimension(Integer.MAX_VALUE, 395));
+        section.setMaximumSize(new Dimension(Integer.MAX_VALUE, 270));
 
         JPanel heading = new JPanel(new BorderLayout());
         heading.setOpaque(false);
@@ -527,8 +502,8 @@ final class MainFrame extends JFrame {
         rail.setBorder(new EmptyBorder(1, 1, 8, 8));
 
         for (int i = 0; i < items.size(); i++) {
-            rail.add(new ShowCard(items.get(i), this::openDetails));
-            if (i < items.size() - 1) rail.add(Box.createHorizontalStrut(14));
+            rail.add(new LandscapeCard(items.get(i), this::openDetails));
+            if (i < items.size() - 1) rail.add(Box.createHorizontalStrut(12));
         }
 
         JScrollPane scroll = new JScrollPane(rail);
@@ -538,7 +513,7 @@ final class MainFrame extends JFrame {
         scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         scroll.getHorizontalScrollBar().setUnitIncrement(28);
-        scroll.setPreferredSize(new Dimension(800, 330));
+        scroll.setPreferredSize(new Dimension(800, 210));
         section.add(scroll, BorderLayout.CENTER);
         return section;
     }
@@ -555,7 +530,11 @@ final class MainFrame extends JFrame {
     private void loadPage(boolean append) {
         ((CardLayout) contentStack.getLayout()).show(contentStack, "CATALOG");
 
-        if (activeWorker != null && !activeWorker.isDone()) activeWorker.cancel(true);
+        if (append && !hasMore) return;
+        if (activeWorker != null && !activeWorker.isDone()) {
+            if (append) return;
+            activeWorker.cancel(true);
+        }
         Provider requestProvider = provider;
         Mode requestMode = mode;
         int requestPage = page;
@@ -570,7 +549,8 @@ final class MainFrame extends JFrame {
             return;
         }
 
-        setBusy(true, append ? "Cargando más…" : "Cargando…");
+        if (append) status.setText("Cargando más…");
+        else setBusy(true, "Cargando…");
         if (!append) renderLoading(requestProvider.name());
 
         activeWorker = new SwingWorker<List<Models.ShowItem>, Void>() {
@@ -594,19 +574,17 @@ final class MainFrame extends JFrame {
 
                     boolean paged = requestMode == Mode.MOVIES || requestMode == Mode.SERIES
                             || requestMode == Mode.LIVE || requestMode == Mode.SEARCH;
-                    configurePaging(paged, !items.isEmpty());
+                    hasMore = paged && !items.isEmpty();
+                    configurePaging(false, false);
                     pageLabel.setText(loadedItems.size() + " cargados");
-                    status.setText(loadedItems.isEmpty()
-                            ? "Sin resultados"
-                            : loadedItems.size() + " elementos");
-                    setBusy(false, status.getText());
+                    status.setText(loadedItems.isEmpty() ? "Sin resultados" : " ");
+                    if (!append) setBusy(false, status.getText());
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     if (append && !loadedItems.isEmpty()) {
                         page = Math.max(1, page - 1);
                         status.setText("No se pudo cargar más");
-                        configurePaging(true, true);
-                        setBusy(false, status.getText());
+                        configurePaging(false, false);
                     } else {
                         renderError(cause);
                         configurePaging(false, false);
@@ -650,7 +628,7 @@ final class MainFrame extends JFrame {
             return;
         }
 
-        for (Models.ShowItem item : items) grid.add(new ShowCard(item, this::openDetails));
+        for (Models.ShowItem item : items) grid.add(new LandscapeCard(item, this::openDetails));
         grid.revalidate();
         grid.repaint();
     }
@@ -703,12 +681,28 @@ final class MainFrame extends JFrame {
         return card;
     }
 
+    private void maybeLoadMore() {
+        if (!hasMore || loadedItems.isEmpty()) return;
+        if (activeWorker != null && !activeWorker.isDone()) return;
+
+        boolean paged = mode == Mode.MOVIES || mode == Mode.SERIES
+                || mode == Mode.LIVE || mode == Mode.SEARCH;
+        if (!paged) return;
+
+        JScrollBar bar = catalogScroll.getVerticalScrollBar();
+        int remaining = bar.getMaximum() - (bar.getValue() + bar.getVisibleAmount());
+        if (remaining > 260) return;
+
+        page++;
+        loadPage(true);
+    }
+
     private void configurePaging(boolean visible, boolean canLoadMore) {
-        pagingBar.setVisible(visible);
-        resetButton.setVisible(visible && page > 1);
-        nextButton.setVisible(visible);
-        nextButton.setEnabled(canLoadMore);
-        pageLabel.setVisible(visible);
+        pagingBar.setVisible(false);
+        resetButton.setVisible(false);
+        nextButton.setVisible(false);
+        nextButton.setEnabled(false);
+        pageLabel.setVisible(false);
     }
 
     private void openSettings() {
@@ -728,9 +722,9 @@ final class MainFrame extends JFrame {
     }
 
     private void rebuildGridColumns() {
-        int usable = Math.max(760, getWidth() - 214 - 86);
-        int columns = Math.max(3, Math.min(7, usable / 205));
-        grid.setLayout(new GridLayout(0, columns, 18, 22));
+        int usable = Math.max(900, getWidth() - 86);
+        int columns = Math.max(2, Math.min(5, usable / 310));
+        grid.setLayout(new GridLayout(0, columns, 18, 24));
     }
 
     private void updateNavigationState() {
@@ -753,6 +747,7 @@ final class MainFrame extends JFrame {
             case HISTORY -> "Historial";
         };
         sectionTitle.setText(title);
+        sectionHeaderPanel.setVisible(mode != Mode.HOME);
 
         String subtitle = switch (mode) {
             case HOME -> "Películas, series y canales en un solo lugar";

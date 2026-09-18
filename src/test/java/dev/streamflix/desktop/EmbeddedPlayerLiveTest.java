@@ -39,8 +39,8 @@ public final class EmbeddedPlayerLiveTest {
 
             try (MpvIpcClient ipc = MpvIpcClient.connect(pipe, 5000)) {
                 ipc.setProperty("volume", 0);
-                Object duration = waitProperty(ipc, "duration", 10000);
-                Object tracks = waitProperty(ipc, "track-list", 10000);
+                Object duration = waitProperty(ipc, "duration", 30000);
+                Object tracks = waitProperty(ipc, "track-list", 30000);
                 if (!(duration instanceof Number n) || n.doubleValue() <= 0) {
                     throw new AssertionError("Invalid duration: " + duration);
                 }

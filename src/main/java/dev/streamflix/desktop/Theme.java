@@ -27,6 +27,8 @@ final class Theme {
 
     static void install() {
         FlatDarkLaf.setup();
+        JFrame.setDefaultLookAndFeelDecorated(true);
+        JDialog.setDefaultLookAndFeelDecorated(true);
 
         UIManager.put("defaultFont", FONT);
         UIManager.put("Component.arc", 12);
@@ -89,6 +91,14 @@ final class Theme {
         b.setHorizontalAlignment(SwingConstants.LEFT);
         b.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
         b.setPreferredSize(new Dimension(188, 42));
+        return b;
+    }
+
+    static JButton topNavButton(String text) {
+        FlatButton b = new FlatButton(text, false, false);
+        b.setHorizontalAlignment(SwingConstants.CENTER);
+        b.setPreferredSize(new Dimension(Math.max(76, text.length() * 9 + 24), 36));
+        b.setMaximumSize(new Dimension(150, 36));
         return b;
     }
 
@@ -191,6 +201,10 @@ final class Theme {
                 if (selectedState && navigation) {
                     g2.setColor(ACCENT);
                     g2.fillRoundRect(0, 7, 3, Math.max(0, getHeight() - 14), 3, 3);
+                } else if (selectedState) {
+                    g2.setColor(ACCENT);
+                    int width = Math.min(28, Math.max(12, getWidth() / 3));
+                    g2.fillRoundRect((getWidth() - width) / 2, Math.max(0, getHeight() - 3), width, 2, 2, 2);
                 }
             } finally {
                 g2.dispose();

@@ -21,67 +21,108 @@ final class DetailDialog extends JDialog {
         super(owner, item.title(), ModalityType.MODELESS);
         this.provider = provider;
         this.item = item;
-        getRootPane().putClientProperty("JRootPane.titleBarBackground", Theme.SIDEBAR);
-        getRootPane().putClientProperty("JRootPane.titleBarForeground", Theme.TEXT);
-        setSize(1040, 720);
-        setMinimumSize(new Dimension(880, 620));
+        setUndecorated(true);
+        setSize(1180, 780);
+        setMinimumSize(new Dimension(980, 660));
         setLocationRelativeTo(owner);
         getContentPane().setBackground(Theme.BG);
         setLayout(new BorderLayout());
         add(buildBody(), BorderLayout.CENTER);
-        add(buildFooter(), BorderLayout.SOUTH);
         if (item.type() == Models.ShowType.TV_SHOW) loadEpisodes();
     }
 
     private JComponent buildBody() {
-        JPanel body = new JPanel(new BorderLayout(30, 0));
-        body.setBackground(Theme.BG);
-        body.setBorder(new EmptyBorder(30, 32, 28, 32));
+        JPanel root = new JPanel(new BorderLayout());
+        root.setBackground(Theme.BG);
+        root.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
 
-        JLabel poster = new JLabel("Sin imagen", SwingConstants.CENTER);
-        poster.setPreferredSize(new Dimension(260, 390));
-        poster.setMinimumSize(new Dimension(220, 330));
-        poster.setOpaque(true);
-        poster.setBackground(Theme.PANEL_ALT);
-        poster.setForeground(Theme.MUTED);
-        poster.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
-        ImageLoader.load(item.poster(), poster, 260, 390);
-        body.add(poster, BorderLayout.WEST);
+        JPanel content = new JPanel();
+        content.setBackground(Theme.BG);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 
-        JPanel info = new JPanel();
-        info.setOpaque(false);
-        info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
+        JComponent hero = buildHero();
+        hero.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(hero);
+
+        if (item.type() == Models.ShowType.TV_SHOW) {
+            JPanel episodesWrap = new JPanel(new BorderLayout());
+            episodesWrap.setOpaque(false);
+            episodesWrap.setBorder(new EmptyBorder(22, 28, 26, 28));
+            episodeArea.setOpaque(false);
+            JLabel loading = Theme.muted("Cargando episodios…");
+            loading.setBorder(new EmptyBorder(18, 0, 18, 0));
+            episodeArea.add(loading, BorderLayout.CENTER);
+            episodesWrap.add(episodeArea, BorderLayout.CENTER);
+            episodesWrap.setAlignmentX(Component.LEFT_ALIGNMENT);
+            content.add(episodesWrap);
+        }
+
+        JScrollPane scroll = new JScrollPane(content);
+        scroll.setBorder(null);
+        scroll.getViewport().setBackground(Theme.BG);
+        scroll.getVerticalScrollBar().setUnitIncrement(26);
+        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        root.add(scroll, BorderLayout.CENTER);
+
+        return root;
+    }
+
+    private JComponent buildHero() {
+        JLayeredPane hero = new JLayeredPane();
+        hero.setPreferredSize(new Dimension(1160, 390));
+        hero.setMaximumSize(new Dimension(Integer.MAX_VALUE, 390));
+        hero.setOpaque(true);
+        hero.setBackground(Color.BLACK);
+
+        String heroImage = item.banner() != null && !item.banner().isBlank() ? item.banner() : item.poster();
+        ArtworkPanel background = new ArtworkPanel(heroImage);
+        background.setFallbackText("");
+        hero.add(background, Integer.valueOf(0));
+
+        JPanel shade = new JPanel() {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                try {
+                    int w = getWidth();
+                    int h = getHeight();
+                    g2.setPaint(new GradientPaint(
+                            0, 0, new Color(0, 0, 0, 210),
+                            Math.max(1, (int) (w * 0.72)), 0, new Color(0, 0, 0, 30)));
+                    g2.fillRect(0, 0, w, h);
+                    g2.setPaint(new GradientPaint(
+                            0, Math.max(1, (int) (h * 0.55)), new Color(0, 0, 0, 0),
+                            0, h, Theme.BG));
+                    g2.fillRect(0, 0, w, h);
+                } finally {
+                    g2.dispose();
+                }
+            }
+        };
+        shade.setOpaque(false);
+        hero.add(shade, Integer.valueOf(1));
+
+        JPanel copy = new JPanel();
+        copy.setOpaque(false);
+        copy.setLayout(new BoxLayout(copy, BoxLayout.Y_AXIS));
 
         JLabel source = Theme.eyebrow(provider.name() + "  ·  "
                 + (item.type() == Models.ShowType.MOVIE ? "PELÍCULA" : "SERIE"));
-        source.setForeground(Theme.ACCENT);
+        source.setForeground(new Color(225, 225, 228));
         source.setAlignmentX(Component.LEFT_ALIGNMENT);
-        info.add(source);
-        info.add(Box.createVerticalStrut(8));
 
-        JLabel title = Theme.heading("<html><body style='width:590px'>" + escapeHtml(item.title()) + "</body></html>", 31f);
+        JLabel title = Theme.heading("<html><body style='width:690px'>"
+                + escapeHtml(item.title()) + "</body></html>", 34f);
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
-        info.add(title);
-        info.add(Box.createVerticalStrut(10));
 
         JComponent metadata = metadataLine();
         metadata.setAlignmentX(Component.LEFT_ALIGNMENT);
-        info.add(metadata);
-        info.add(Box.createVerticalStrut(18));
 
-        JTextArea overview = new JTextArea(item.overview() == null || item.overview().isBlank()
-                ? "Sin descripción disponible." : item.overview());
-        overview.setWrapStyleWord(true);
-        overview.setLineWrap(true);
-        overview.setEditable(false);
-        overview.setOpaque(false);
-        overview.setForeground(Theme.MUTED);
-        overview.setFont(Theme.FONT.deriveFont(14.5f));
-        overview.setRows(6);
-        overview.setMaximumSize(new Dimension(Integer.MAX_VALUE, 150));
+        String overviewText = item.overview() == null || item.overview().isBlank()
+                ? "Sin descripción disponible." : item.overview();
+        JLabel overview = Theme.muted("<html><body style='width:680px'>"
+                + escapeHtml(shorten(overviewText, 330)) + "</body></html>");
+        overview.setFont(Theme.FONT.deriveFont(14f));
         overview.setAlignmentX(Component.LEFT_ALIGNMENT);
-        info.add(overview);
-        info.add(Box.createVerticalStrut(20));
 
         JButton favorite = Theme.button(UserData.isFavorite(provider.id(), item.id())
                 ? "Quitar de favoritos" : "Añadir a favoritos");
@@ -91,46 +132,60 @@ final class DetailDialog extends JDialog {
                     ? "Quitar de favoritos" : "Añadir a favoritos");
         });
 
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        actions.setOpaque(false);
+        actions.setAlignmentX(Component.LEFT_ALIGNMENT);
+
         if (item.type() == Models.ShowType.MOVIE) {
             JButton play = Theme.primaryButton("Reproducir");
             play.addActionListener(e -> chooseServerAndPlay(item.providerId(), item.title(), true));
-
-            JButton selectServer = Theme.button("Elegir servidor");
-            selectServer.addActionListener(e -> chooseServerAndPlay(item.providerId(), item.title(), false));
-
-            JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-            actions.setOpaque(false);
-            actions.setAlignmentX(Component.LEFT_ALIGNMENT);
+            JButton servers = Theme.button("Elegir servidor");
+            servers.addActionListener(e -> chooseServerAndPlay(item.providerId(), item.title(), false));
             actions.add(play);
-            actions.add(selectServer);
-            actions.add(favorite);
-            info.add(actions);
-        } else {
-            JPanel seriesActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-            seriesActions.setOpaque(false);
-            seriesActions.setAlignmentX(Component.LEFT_ALIGNMENT);
-            seriesActions.add(favorite);
-            info.add(seriesActions);
-            info.add(Box.createVerticalStrut(24));
-
-            episodeArea.setOpaque(false);
-            episodeArea.setAlignmentX(Component.LEFT_ALIGNMENT);
-            JLabel loading = Theme.muted("Cargando episodios…");
-            episodeArea.add(loading, BorderLayout.CENTER);
-            info.add(episodeArea);
+            actions.add(servers);
         }
+        actions.add(favorite);
 
-        JPanel infoWrapper = new JPanel(new BorderLayout());
-        infoWrapper.setOpaque(false);
-        infoWrapper.add(info, BorderLayout.NORTH);
-        body.add(infoWrapper, BorderLayout.CENTER);
+        copy.add(source);
+        copy.add(Box.createVerticalStrut(8));
+        copy.add(title);
+        copy.add(Box.createVerticalStrut(10));
+        copy.add(metadata);
+        copy.add(Box.createVerticalStrut(14));
+        copy.add(overview);
+        copy.add(Box.createVerticalStrut(18));
+        copy.add(actions);
 
-        JScrollPane scroll = new JScrollPane(body);
-        scroll.setBorder(null);
-        scroll.getViewport().setBackground(Theme.BG);
-        scroll.getVerticalScrollBar().setUnitIncrement(24);
-        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        return scroll;
+        hero.add(copy, Integer.valueOf(2));
+
+        JButton close = Theme.button("Cerrar");
+        close.addActionListener(e -> dispose());
+        hero.add(close, Integer.valueOf(3));
+
+        hero.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent e) {
+                layoutHero(hero, background, shade, copy, close);
+            }
+        });
+        SwingUtilities.invokeLater(() -> layoutHero(hero, background, shade, copy, close));
+        return hero;
+    }
+
+    private static void layoutHero(JLayeredPane hero, Component background, Component shade,
+                                   Component copy, Component close) {
+        int w = hero.getWidth();
+        int h = hero.getHeight();
+        background.setBounds(0, 0, w, h);
+        shade.setBounds(0, 0, w, h);
+        copy.setBounds(28, Math.max(42, h - 300), Math.min(760, Math.max(620, w - 120)), 275);
+        close.setBounds(Math.max(10, w - 100), 18, 78, 38);
+    }
+
+    private static String shorten(String value, int max) {
+        if (value == null || value.length() <= max) return value == null ? "" : value;
+        int cut = value.lastIndexOf(' ', max);
+        if (cut < max / 2) cut = max;
+        return value.substring(0, cut).strip() + "…";
     }
 
     private JComponent metadataLine() {
@@ -149,20 +204,6 @@ final class DetailDialog extends JDialog {
                 BorderFactory.createLineBorder(Theme.BORDER),
                 new EmptyBorder(5, 9, 5, 9)));
         return label;
-    }
-
-    private JComponent buildFooter() {
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setBackground(Theme.SIDEBAR);
-        footer.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER),
-                new EmptyBorder(9, 18, 9, 18)));
-        status.setFont(Theme.FONT.deriveFont(12f));
-        footer.add(status, BorderLayout.WEST);
-        JLabel mpv = Theme.muted(MpvPlayer.isAvailable() ? "Reproductor listo" : "mpv no disponible");
-        mpv.setFont(Theme.FONT.deriveFont(11.5f));
-        footer.add(mpv, BorderLayout.EAST);
-        return footer;
     }
 
     private void loadEpisodes() {
@@ -187,8 +228,13 @@ final class DetailDialog extends JDialog {
 
     private void renderEpisodes() {
         episodeArea.removeAll();
+
         Map<Integer, List<Models.Episode>> seasons = episodes.stream()
-                .collect(Collectors.groupingBy(Models.Episode::seasonNumber, TreeMap::new, Collectors.toList()));
+                .collect(Collectors.groupingBy(
+                        Models.Episode::seasonNumber,
+                        TreeMap::new,
+                        Collectors.toList()));
+
         if (seasons.isEmpty()) {
             episodeArea.add(Theme.muted("No hay episodios disponibles."), BorderLayout.CENTER);
             episodeArea.revalidate();
@@ -199,12 +245,12 @@ final class DetailDialog extends JDialog {
         JPanel header = new JPanel();
         header.setOpaque(false);
         header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
-        header.setBorder(new EmptyBorder(0, 0, 12, 0));
+        header.setBorder(new EmptyBorder(0, 0, 14, 0));
 
-        JLabel episodesTitle = Theme.heading("Episodios", 19f);
+        JLabel episodesTitle = Theme.heading("Episodios", 21f);
         episodesTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
         header.add(episodesTitle);
-        header.add(Box.createVerticalStrut(10));
+        header.add(Box.createVerticalStrut(12));
 
         JPanel seasonTabs = new JPanel(new FlowLayout(FlowLayout.LEFT, 7, 0));
         seasonTabs.setOpaque(false);
@@ -216,39 +262,57 @@ final class DetailDialog extends JDialog {
         seasonScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         seasonScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
         seasonScroll.getHorizontalScrollBar().setUnitIncrement(24);
-        seasonScroll.setPreferredSize(new Dimension(560, 48));
+        seasonScroll.setPreferredSize(new Dimension(760, 48));
         seasonScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+
         header.add(seasonScroll);
         episodeArea.add(header, BorderLayout.NORTH);
 
-        DefaultListModel<Models.Episode> model = new DefaultListModel<>();
-        JList<Models.Episode> list = new JList<>(model);
-        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        list.setVisibleRowCount(7);
-        list.setFixedCellHeight(48);
-        list.setCellRenderer(new DefaultListCellRenderer() {
-            @Override public Component getListCellRendererComponent(
-                    JList<?> l, Object value, int index, boolean selected, boolean focus) {
-                JLabel label = (JLabel) super.getListCellRendererComponent(l, value, index, selected, focus);
-                Models.Episode ep = (Models.Episode) value;
-                String title = ep.title() == null || ep.title().isBlank()
-                        ? "Episodio " + ep.episodeNumber() : ep.title();
-                label.setText("<html><b>E" + ep.episodeNumber() + "</b>&nbsp;&nbsp; "
-                        + escapeHtml(title) + "</html>");
-                label.setBorder(new EmptyBorder(11, 13, 11, 13));
-                label.setFont(Theme.FONT.deriveFont(13f));
-                return label;
-            }
-        });
+        JPanel rows = new JPanel();
+        rows.setOpaque(false);
+        rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
+        rows.setBorder(new EmptyBorder(0, 0, 4, 0));
+
+        JPanel rowsViewport = new JPanel(new BorderLayout());
+        rowsViewport.setOpaque(false);
+        rowsViewport.add(rows, BorderLayout.NORTH);
+
+        JScrollPane episodeScroll = new JScrollPane(rowsViewport);
+        episodeScroll.setBorder(null);
+        episodeScroll.getViewport().setBackground(Theme.BG);
+        episodeScroll.getVerticalScrollBar().setUnitIncrement(24);
+        episodeScroll.setPreferredSize(new Dimension(820, 390));
+        episodeArea.add(episodeScroll, BorderLayout.CENTER);
 
         Map<Integer, JButton> seasonButtons = new LinkedHashMap<>();
+
         java.util.function.IntConsumer selectSeason = selectedSeason -> {
-            model.clear();
-            seasons.getOrDefault(selectedSeason, List.of()).forEach(model::addElement);
-            if (!model.isEmpty()) list.setSelectedIndex(0);
+            rows.removeAll();
+
+            for (Models.Episode episode : seasons.getOrDefault(selectedSeason, List.of())) {
+                EpisodeRow row = new EpisodeRow(
+                        episode,
+                        ep -> chooseServerAndPlay(
+                                ep.id(),
+                                item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(),
+                                true),
+                        ep -> chooseServerAndPlay(
+                                ep.id(),
+                                item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(),
+                                false)
+                );
+                row.setAlignmentX(Component.LEFT_ALIGNMENT);
+                rows.add(row);
+                rows.add(Box.createVerticalStrut(9));
+            }
+
             for (var entry : seasonButtons.entrySet()) {
                 Theme.setNavSelected(entry.getValue(), entry.getKey() == selectedSeason);
             }
+
+            rows.revalidate();
+            rows.repaint();
+            SwingUtilities.invokeLater(() -> episodeScroll.getVerticalScrollBar().setValue(0));
         };
 
         for (int season : seasons.keySet()) {
@@ -259,46 +323,10 @@ final class DetailDialog extends JDialog {
             seasonTabs.add(button);
         }
 
-        int initialSeason = seasons.containsKey(1) ? 1 : seasons.keySet().iterator().next();
+        int initialSeason = seasons.containsKey(1)
+                ? 1
+                : seasons.keySet().iterator().next();
         selectSeason.accept(initialSeason);
-
-        JScrollPane episodeScroll = new JScrollPane(list);
-        episodeScroll.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
-        episodeScroll.setPreferredSize(new Dimension(560, 320));
-        episodeArea.add(episodeScroll, BorderLayout.CENTER);
-
-        JButton playEpisode = Theme.primaryButton("Reproducir episodio");
-        playEpisode.addActionListener(e -> {
-            Models.Episode ep = list.getSelectedValue();
-            if (ep == null) return;
-            chooseServerAndPlay(ep.id(),
-                    item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(), true);
-        });
-
-        JButton selectServer = Theme.button("Elegir servidor");
-        selectServer.addActionListener(e -> {
-            Models.Episode ep = list.getSelectedValue();
-            if (ep == null) return;
-            chooseServerAndPlay(ep.id(),
-                    item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(), false);
-        });
-
-        JPanel epButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        epButtons.setOpaque(false);
-        epButtons.setBorder(new EmptyBorder(12, 0, 0, 0));
-        epButtons.add(playEpisode);
-        epButtons.add(selectServer);
-        episodeArea.add(epButtons, BorderLayout.SOUTH);
-
-        list.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override public void mouseClicked(java.awt.event.MouseEvent e) {
-                if (e.getClickCount() == 2 && list.getSelectedValue() != null) {
-                    Models.Episode ep = list.getSelectedValue();
-                    chooseServerAndPlay(ep.id(),
-                            item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(), true);
-                }
-            }
-        });
 
         episodeArea.revalidate();
         episodeArea.repaint();

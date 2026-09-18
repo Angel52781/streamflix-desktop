@@ -113,7 +113,7 @@ public final class TmdbFixtureTest {
         require("tmdb:movie:11".equals(movie.id()), "movie logical id");
         require("movie/11".equals(movie.providerId()), "movie remote id");
         require("tmdb-en".equals(movie.sourceProviderId()), "movie source provider");
-        require(movie.poster().equals("https://image.tmdb.org/t/p/w500/poster.jpg"), "movie poster");
+        require(movie.poster().equals("https://image.tmdb.org/t/p/w780/poster.jpg"), "movie poster");
 
         List<Models.ShowItem> search = provider.search("Demo", 1);
         require(search.size() == 2, "multi search filters people");

@@ -16,23 +16,31 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Streamflix-owned video player UI. mpv remains the playback engine, but it renders
- * into this window and is controlled through JSON IPC rather than showing its own UI.
+ * Streamflix-owned video player. mpv remains the engine, but all visible chrome
+ * and controls belong to Streamflix.
  */
 final class EmbeddedPlayerWindow extends JDialog {
+    private static final String CARD_LOADING = "loading";
+    private static final String CARD_VIDEO = "video";
     private static EmbeddedPlayerWindow activeWindow;
 
     private final Canvas videoSurface = new Canvas();
+    private final JPanel mediaStage = new JPanel(new CardLayout());
+    private final JPanel chromeTop = new JPanel(new BorderLayout(18, 0));
+    private final JPanel chromeBottom = new JPanel();
+    private final JLabel loadingTitle = Theme.heading("Preparando reproducción", 22f);
+    private final JLabel loadingDetail = Theme.muted("Buscando un servidor compatible…");
+    private final JProgressBar loadingProgress = new JProgressBar();
+
     private final JLabel mediaTitle = Theme.heading("Reproduciendo", 16f);
     private final JLabel serverLabel = Theme.muted("Preparando…");
     private final JLabel timeLabel = Theme.muted("00:00 / 00:00");
     private final JLabel status = Theme.muted("Preparando reproducción…");
-    private final JProgressBar loading = new JProgressBar();
 
     private final JButton playPause = Theme.primaryButton("Pausar");
     private final JButton back10 = Theme.button("−10 s");
     private final JButton forward10 = Theme.button("+10 s");
-    private final JButton maximize = Theme.button("Maximizar");
+    private final JButton fullscreen = Theme.button("Pantalla completa");
 
     private final JSlider timeline = new JSlider(0, 1000, 0);
     private final JSlider volume = new JSlider(0, 100, 80);
@@ -40,20 +48,20 @@ final class EmbeddedPlayerWindow extends JDialog {
     private final JComboBox<TrackOption> audioBox = new JComboBox<>();
 
     private final Timer refreshTimer;
+    private final Timer chromeHideTimer;
     private final AtomicBoolean refreshInFlight = new AtomicBoolean();
     private volatile MpvIpcClient ipc;
     private volatile boolean closing;
     private volatile boolean updatingTracks;
     private volatile double durationSeconds;
-    private Rectangle normalBounds;
+    private boolean fullScreen;
 
     private EmbeddedPlayerWindow(Window owner, String title) {
         super(owner, "Streamflix · " + title, ModalityType.MODELESS);
+        setUndecorated(true);
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-        getRootPane().putClientProperty("JRootPane.titleBarBackground", Theme.SIDEBAR);
-        getRootPane().putClientProperty("JRootPane.titleBarForeground", Theme.TEXT);
-        setMinimumSize(new Dimension(900, 600));
-        setSize(1240, 780);
+        setMinimumSize(new Dimension(960, 620));
+        setSize(1320, 820);
         setLocationRelativeTo(owner);
         setContentPane(buildUi());
 
@@ -62,15 +70,22 @@ final class EmbeddedPlayerWindow extends JDialog {
         videoSurface.setFocusable(true);
 
         installActions();
-        refreshTimer = new Timer(750, e -> refreshStateAsync());
+        refreshTimer = new Timer(700, e -> refreshStateAsync());
         refreshTimer.setCoalesce(true);
+        chromeHideTimer = new Timer(2400, e -> {
+            if (fullScreen) chromeBottom.setVisible(false);
+        });
+        chromeHideTimer.setRepeats(false);
 
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosed(WindowEvent e) { stopPlayback(); }
         });
 
         getRootPane().registerKeyboardAction(
-                e -> dispose(),
+                e -> {
+                    if (fullScreen) toggleFullscreen();
+                    else dispose();
+                },
                 KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
                 JComponent.WHEN_IN_FOCUSED_WINDOW
         );
@@ -89,11 +104,21 @@ final class EmbeddedPlayerWindow extends JDialog {
                 KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0),
                 JComponent.WHEN_IN_FOCUSED_WINDOW
         );
+        getRootPane().registerKeyboardAction(
+                e -> toggleFullscreen(),
+                KeyStroke.getKeyStroke(KeyEvent.VK_F, 0),
+                JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
 
         videoSurface.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) toggleMaximize();
+                revealChrome();
+                if (e.getClickCount() == 2) toggleFullscreen();
             }
+        });
+        videoSurface.addMouseMotionListener(new MouseMotionAdapter() {
+            @Override public void mouseMoved(MouseEvent e) { revealChrome(); }
+            @Override public void mouseDragged(MouseEvent e) { revealChrome(); }
         });
     }
 
@@ -102,6 +127,7 @@ final class EmbeddedPlayerWindow extends JDialog {
             throw new IllegalStateException("El reproductor debe abrirse desde la UI.");
         }
         if (activeWindow != null && activeWindow.isDisplayable()) activeWindow.dispose();
+
         EmbeddedPlayerWindow window = new EmbeddedPlayerWindow(owner, title);
         activeWindow = window;
         window.setVisible(true);
@@ -112,9 +138,10 @@ final class EmbeddedPlayerWindow extends JDialog {
 
     void setPreparing(String message) {
         SwingUtilities.invokeLater(() -> {
+            loadingDetail.setText(message);
             status.setText(message);
-            loading.setIndeterminate(true);
-            loading.setVisible(true);
+            loadingProgress.setIndeterminate(true);
+            showStage(CARD_LOADING);
         });
     }
 
@@ -133,6 +160,8 @@ final class EmbeddedPlayerWindow extends JDialog {
         }
         this.ipc = client;
 
+        waitUntilMediaReady(client, 30000);
+
         try {
             Object rawVolume = client.getProperty("volume");
             if (rawVolume instanceof Number n) {
@@ -141,32 +170,36 @@ final class EmbeddedPlayerWindow extends JDialog {
         } catch (Exception ignored) {}
 
         refreshTracks();
+
         SwingUtilities.invokeLater(() -> {
             serverLabel.setText("Servidor · " + serverName);
+            status.setForeground(Theme.MUTED);
             status.setText("Reproduciendo");
-            loading.setIndeterminate(false);
-            loading.setVisible(false);
+            loadingProgress.setIndeterminate(false);
             playPause.setText("Pausar");
+            showStage(CARD_VIDEO);
             refreshTimer.start();
         });
     }
 
     void showFailure(String message) {
         SwingUtilities.invokeLater(() -> {
-            loading.setIndeterminate(false);
-            loading.setVisible(false);
+            loadingProgress.setIndeterminate(false);
+            loadingTitle.setText("No se pudo reproducir");
+            loadingDetail.setText(message);
             status.setForeground(Theme.DANGER);
             status.setText(message);
+            showStage(CARD_LOADING);
         });
     }
 
     private JComponent buildUi() {
         JPanel root = new JPanel(new BorderLayout());
-        root.setBackground(Theme.BG);
+        root.setBackground(Color.BLACK);
+        root.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
 
-        JPanel top = new JPanel(new BorderLayout(18, 0));
-        top.setBackground(Theme.SIDEBAR);
-        top.setBorder(new EmptyBorder(12, 18, 12, 18));
+        chromeTop.setBackground(new Color(8, 10, 15));
+        chromeTop.setBorder(new EmptyBorder(12, 18, 12, 18));
 
         JPanel titleBlock = new JPanel();
         titleBlock.setOpaque(false);
@@ -177,30 +210,32 @@ final class EmbeddedPlayerWindow extends JDialog {
         titleBlock.add(mediaTitle);
         titleBlock.add(Box.createVerticalStrut(2));
         titleBlock.add(serverLabel);
-        top.add(titleBlock, BorderLayout.WEST);
+        chromeTop.add(titleBlock, BorderLayout.WEST);
 
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        right.setOpaque(false);
-        right.add(maximize);
+        JPanel topActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        topActions.setOpaque(false);
         JButton close = Theme.button("Cerrar");
         close.addActionListener(e -> dispose());
-        right.add(close);
-        top.add(right, BorderLayout.EAST);
+        topActions.add(close);
+        chromeTop.add(topActions, BorderLayout.EAST);
 
-        root.add(top, BorderLayout.NORTH);
+        root.add(chromeTop, BorderLayout.NORTH);
+
+        mediaStage.setBackground(Color.BLACK);
+        mediaStage.add(buildLoadingStage(), CARD_LOADING);
 
         JPanel videoWrap = new JPanel(new BorderLayout());
         videoWrap.setBackground(Color.BLACK);
-        videoWrap.setBorder(new EmptyBorder(0, 0, 0, 0));
         videoWrap.add(videoSurface, BorderLayout.CENTER);
-        root.add(videoWrap, BorderLayout.CENTER);
+        mediaStage.add(videoWrap, CARD_VIDEO);
 
-        JPanel controls = new JPanel();
-        controls.setBackground(Theme.SIDEBAR);
-        controls.setBorder(BorderFactory.createCompoundBorder(
+        root.add(mediaStage, BorderLayout.CENTER);
+
+        chromeBottom.setBackground(new Color(8, 10, 15));
+        chromeBottom.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER),
-                new EmptyBorder(10, 16, 12, 16)));
-        controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
+                new EmptyBorder(10, 18, 12, 18)));
+        chromeBottom.setLayout(new BoxLayout(chromeBottom, BoxLayout.Y_AXIS));
 
         JPanel progressRow = new JPanel(new BorderLayout(10, 0));
         progressRow.setOpaque(false);
@@ -211,8 +246,8 @@ final class EmbeddedPlayerWindow extends JDialog {
         timeLabel.setPreferredSize(new Dimension(112, 28));
         timeLabel.setHorizontalAlignment(SwingConstants.RIGHT);
         progressRow.add(timeLabel, BorderLayout.EAST);
-        controls.add(progressRow);
-        controls.add(Box.createVerticalStrut(8));
+        chromeBottom.add(progressRow);
+        chromeBottom.add(Box.createVerticalStrut(8));
 
         JPanel actions = new JPanel(new BorderLayout(12, 0));
         actions.setOpaque(false);
@@ -222,10 +257,10 @@ final class EmbeddedPlayerWindow extends JDialog {
         left.add(playPause);
         left.add(back10);
         left.add(forward10);
+        left.add(Box.createHorizontalStrut(8));
 
         JLabel volumeLabel = Theme.muted("Volumen");
         volumeLabel.setFont(Theme.FONT.deriveFont(11.5f));
-        left.add(Box.createHorizontalStrut(6));
         left.add(volumeLabel);
         volume.setPreferredSize(new Dimension(110, 30));
         volume.setOpaque(false);
@@ -244,30 +279,54 @@ final class EmbeddedPlayerWindow extends JDialog {
         tracks.add(audioBox);
         tracks.add(Theme.muted("Subtítulos"));
         tracks.add(subtitleBox);
+        tracks.add(fullscreen);
         actions.add(tracks, BorderLayout.EAST);
 
-        controls.add(actions);
-        controls.add(Box.createVerticalStrut(7));
+        chromeBottom.add(actions);
+        chromeBottom.add(Box.createVerticalStrut(7));
 
         JPanel state = new JPanel(new BorderLayout());
         state.setOpaque(false);
         status.setFont(Theme.FONT.deriveFont(11.5f));
         state.add(status, BorderLayout.WEST);
-        loading.setIndeterminate(true);
-        loading.setPreferredSize(new Dimension(150, 4));
-        loading.putClientProperty("JProgressBar.largeHeight", false);
-        state.add(loading, BorderLayout.EAST);
-        controls.add(state);
+        chromeBottom.add(state);
 
-        root.add(controls, BorderLayout.SOUTH);
+        root.add(chromeBottom, BorderLayout.SOUTH);
         return root;
+    }
+
+    private JComponent buildLoadingStage() {
+        JPanel stage = new JPanel(new GridBagLayout());
+        stage.setBackground(Color.BLACK);
+
+        JPanel box = new JPanel();
+        box.setOpaque(false);
+        box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
+
+        loadingTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+        loadingDetail.setAlignmentX(Component.CENTER_ALIGNMENT);
+        loadingDetail.setFont(Theme.FONT.deriveFont(13f));
+
+        loadingProgress.setIndeterminate(true);
+        loadingProgress.setPreferredSize(new Dimension(260, 5));
+        loadingProgress.setMaximumSize(new Dimension(260, 5));
+        loadingProgress.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        box.add(loadingTitle);
+        box.add(Box.createVerticalStrut(10));
+        box.add(loadingDetail);
+        box.add(Box.createVerticalStrut(18));
+        box.add(loadingProgress);
+
+        stage.add(box);
+        return stage;
     }
 
     private void installActions() {
         playPause.addActionListener(e -> togglePause());
         back10.addActionListener(e -> seek(-10));
         forward10.addActionListener(e -> seek(10));
-        maximize.addActionListener(e -> toggleMaximize());
+        fullscreen.addActionListener(e -> toggleFullscreen());
 
         timeline.addChangeListener(this::timelineChanged);
         volume.addChangeListener(e -> {
@@ -310,30 +369,66 @@ final class EmbeddedPlayerWindow extends JDialog {
         runCommand(() -> requireIpc().command(List.of("seek", seconds, "relative+exact")));
     }
 
-    private void toggleMaximize() {
-        if (normalBounds == null) {
-            normalBounds = getBounds();
-            Rectangle bounds = getGraphicsConfiguration().getBounds();
-            Insets screenInsets = Toolkit.getDefaultToolkit().getScreenInsets(getGraphicsConfiguration());
-            setBounds(bounds.x + screenInsets.left, bounds.y + screenInsets.top,
-                    bounds.width - screenInsets.left - screenInsets.right,
-                    bounds.height - screenInsets.top - screenInsets.bottom);
-            maximize.setText("Restaurar");
+    private void toggleFullscreen() {
+        GraphicsDevice device = getGraphicsConfiguration().getDevice();
+        if (!fullScreen) {
+            device.setFullScreenWindow(this);
+            fullScreen = true;
+            chromeTop.setVisible(false);
+            chromeBottom.setVisible(true);
+            chromeHideTimer.restart();
+            fullscreen.setText("Salir de pantalla completa");
         } else {
-            setBounds(normalBounds);
-            normalBounds = null;
-            maximize.setText("Maximizar");
+            device.setFullScreenWindow(null);
+            fullScreen = false;
+            chromeHideTimer.stop();
+            chromeTop.setVisible(true);
+            chromeBottom.setVisible(true);
+            setSize(1320, 820);
+            setLocationRelativeTo(getOwner());
+            fullscreen.setText("Pantalla completa");
         }
+        videoSurface.requestFocusInWindow();
+    }
+
+    private void revealChrome() {
+        if (!fullScreen) return;
+        chromeBottom.setVisible(true);
+        chromeHideTimer.restart();
+    }
+
+    private void showStage(String card) {
+        ((CardLayout) mediaStage.getLayout()).show(mediaStage, card);
+        mediaStage.revalidate();
+        mediaStage.repaint();
+    }
+
+    private static void waitUntilMediaReady(MpvIpcClient client, long timeoutMillis) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        Exception last = null;
+        while (System.nanoTime() < deadline) {
+            try {
+                Object duration = client.getProperty("duration");
+                if (duration instanceof Number n && n.doubleValue() > 0) return;
+            } catch (Exception ex) {
+                last = ex;
+            }
+            Thread.sleep(120);
+        }
+        if (last != null) throw last;
+        throw new IllegalStateException("El video no terminó de cargar.");
     }
 
     private void refreshStateAsync() {
         if (ipc == null || closing || !refreshInFlight.compareAndSet(false, true)) return;
+
         new SwingWorker<PlayerState, Void>() {
             @Override protected PlayerState doInBackground() throws Exception {
                 MpvIpcClient client = requireIpc();
                 Object timeRaw = client.getProperty("time-pos");
                 Object durationRaw = client.getProperty("duration");
                 Object pauseRaw = client.getProperty("pause");
+
                 double time = timeRaw instanceof Number n ? n.doubleValue() : 0.0;
                 double duration = durationRaw instanceof Number n ? n.doubleValue() : 0.0;
                 boolean paused = pauseRaw instanceof Boolean b && b;
@@ -343,6 +438,7 @@ final class EmbeddedPlayerWindow extends JDialog {
             @Override protected void done() {
                 refreshInFlight.set(false);
                 if (closing) return;
+
                 try {
                     PlayerState state = get();
                     durationSeconds = state.duration();
@@ -372,11 +468,13 @@ final class EmbeddedPlayerWindow extends JDialog {
                     Map<String, Object> track = Json.object(item);
                     Integer id = Json.integer(track.get("id"));
                     if (id == null) continue;
+
                     String type = Json.string(track.get("type"));
                     String lang = Json.string(track.get("lang"));
                     String title = Json.string(track.get("title"));
                     boolean selected = Boolean.TRUE.equals(track.get("selected"));
                     String label = trackLabel(lang, title, id);
+
                     if ("audio".equals(type)) audio.add(new TrackOption(id, label, selected));
                     else if ("sub".equals(type)) subtitles.add(new TrackOption(id, label, selected));
                 }
@@ -401,25 +499,31 @@ final class EmbeddedPlayerWindow extends JDialog {
     private static void fillTracks(JComboBox<TrackOption> box, List<TrackOption> tracks, boolean allowOff) {
         DefaultComboBoxModel<TrackOption> model = new DefaultComboBoxModel<>();
         TrackOption selected = null;
+
         for (TrackOption track : tracks) {
             model.addElement(track);
             if (track.selected()) selected = track;
         }
+
         box.setModel(model);
         if (selected != null) box.setSelectedItem(selected);
         else if (allowOff && model.getSize() > 0) box.setSelectedIndex(0);
+
         box.setEnabled(model.getSize() > (allowOff ? 1 : 0));
     }
 
     private long windowHandle() throws Exception {
         AtomicLong value = new AtomicLong();
+
         Runnable read = () -> {
             if (!videoSurface.isDisplayable()) return;
             Pointer pointer = Native.getComponentPointer(videoSurface);
             if (pointer != null) value.set(Pointer.nativeValue(pointer));
         };
+
         if (SwingUtilities.isEventDispatchThread()) read.run();
         else SwingUtilities.invokeAndWait(read);
+
         if (value.get() == 0L) throw new IllegalStateException("No se pudo preparar la superficie de video.");
         return value.get();
     }
@@ -427,8 +531,9 @@ final class EmbeddedPlayerWindow extends JDialog {
     private void runCommand(ThrowingRunnable command) {
         if (ipc == null || closing) return;
         new Thread(() -> {
-            try { command.run(); }
-            catch (Exception ex) {
+            try {
+                command.run();
+            } catch (Exception ex) {
                 if (!closing) SwingUtilities.invokeLater(() -> status.setText("Control no disponible"));
             }
         }, "streamflix-player-control").start();
@@ -444,9 +549,18 @@ final class EmbeddedPlayerWindow extends JDialog {
         if (closing) return;
         closing = true;
         refreshTimer.stop();
+        chromeHideTimer.stop();
+
+        GraphicsDevice device = getGraphicsConfiguration().getDevice();
+        if (fullScreen && device.getFullScreenWindow() == this) {
+            device.setFullScreenWindow(null);
+        }
+        fullScreen = false;
+
         MpvIpcClient client = ipc;
         ipc = null;
         if (client != null) client.close();
+
         if (!MpvPlayer.isShutdown()) {
             try { MpvPlayer.beginRequest(); } catch (RuntimeException ignored) {}
             try { MpvPlayer.stopCurrent(); } catch (RuntimeException ignored) {}
@@ -457,6 +571,7 @@ final class EmbeddedPlayerWindow extends JDialog {
     private static String trackLabel(String lang, String title, int id) {
         String language = lang == null || lang.isBlank() ? "" : lang.toUpperCase();
         String name = title == null || title.isBlank() ? "" : title.strip();
+
         if (!language.isBlank() && !name.isBlank()) return language + " · " + name;
         if (!language.isBlank()) return language;
         if (!name.isBlank()) return name;
@@ -465,17 +580,21 @@ final class EmbeddedPlayerWindow extends JDialog {
 
     private static String formatTime(double rawSeconds) {
         if (!Double.isFinite(rawSeconds) || rawSeconds < 0) rawSeconds = 0;
+
         long total = Math.round(rawSeconds);
         long hours = total / 3600;
         long minutes = (total % 3600) / 60;
         long seconds = total % 60;
+
         return hours > 0
                 ? String.format("%d:%02d:%02d", hours, minutes, seconds)
                 : String.format("%02d:%02d", minutes, seconds);
     }
 
     @FunctionalInterface
-    private interface ThrowingRunnable { void run() throws Exception; }
+    private interface ThrowingRunnable {
+        void run() throws Exception;
+    }
 
     private record TrackOption(int id, String label, boolean selected) {
         @Override public String toString() { return label; }

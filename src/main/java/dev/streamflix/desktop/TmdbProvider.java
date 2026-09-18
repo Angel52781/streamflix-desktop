@@ -54,7 +54,7 @@ final class TmdbProvider implements Provider {
             items.putIfAbsent(itemId, new Models.ShowItem(itemId, type + "/" + remoteId,
                     title, text(value, "overview"), text(value, movie ? "release_date" : "first_air_date"),
                     nonNegativeInteger(value.get("runtime")), Json.decimal(value.get("vote_average")),
-                    image(value.get("poster_path"), "w500"), image(value.get("backdrop_path"), "original"),
+                    image(value.get("poster_path"), "w780"), image(value.get("backdrop_path"), "w1280"),
                     movie ? Models.ShowType.MOVIE : Models.ShowType.TV_SHOW, id()));
         }
         return List.copyOf(items.values());

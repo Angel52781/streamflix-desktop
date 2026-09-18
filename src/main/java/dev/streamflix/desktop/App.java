@@ -14,6 +14,7 @@ public final class App {
         Theme.install();
         SwingUtilities.invokeLater(() -> {
             MainFrame frame = new MainFrame(ProviderRegistry.all());
+            frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
             frame.setVisible(true);
         });
     }
