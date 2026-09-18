@@ -15,6 +15,8 @@ public final class MpvPlayerTest {
     public static void main(String[] args) throws Exception {
         testCommandHeadersAndSubtitlePreference();
         testEmbeddedCommand();
+        testPlaybackNetworkProfile();
+        testProgrammaticTimelineRefreshDoesNotSeek();
         testImmediateFailureRejected();
         testNewPlaybackStopsPrevious();
         testStaleRequestCannotReplaceNewerIntent();
@@ -53,6 +55,27 @@ public final class MpvPlayerTest {
         require(command.contains("--osc=no"), "external mpv OSC disabled");
         require(command.contains("--input-default-bindings=no"), "external bindings disabled");
         require(command.contains("--keep-open=yes"), "embedded playback stays attached");
+    }
+
+    private static void testPlaybackNetworkProfile() {
+        Models.Video video = new Models.Video("https://cdn.example/video.m3u8");
+        List<String> command = MpvPlayer.embeddedPlaybackCommand(
+                "mpv.exe", video, "Embedded", 12345L, "\\\\.\\pipe\\streamflix-test");
+        require(command.contains("--hwdec=auto-safe"), "hardware decoding enabled");
+        require(command.contains("--network-timeout=20"), "dead network reads fail in bounded time");
+        require(command.contains("--cache-pause=yes"), "network cache pause enabled");
+        require(command.contains("--cache-pause-wait=2"), "cache recovery waits for useful buffer");
+    }
+
+    private static void testProgrammaticTimelineRefreshDoesNotSeek() {
+        require(!EmbeddedPlayerWindow.shouldSeekTimeline(true, false, 2400),
+                "programmatic timeline refresh never seeks");
+        require(!EmbeddedPlayerWindow.shouldSeekTimeline(false, true, 2400),
+                "dragging timeline waits until adjustment completes");
+        require(!EmbeddedPlayerWindow.shouldSeekTimeline(false, false, 0),
+                "timeline without duration cannot seek");
+        require(EmbeddedPlayerWindow.shouldSeekTimeline(false, false, 2400),
+                "user timeline selection can seek");
     }
 
     private static void testImmediateFailureRejected() throws Exception {

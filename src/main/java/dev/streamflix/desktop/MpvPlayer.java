@@ -56,6 +56,8 @@ final class MpvPlayer {
 
     static void stopCurrent() { PLAYER.stop(); }
 
+    static boolean isCurrentAlive() { return PLAYER.currentAlive(); }
+
     static void shutdown() { PLAYER.close(); }
     static boolean isShutdown() { return PLAYER.closed; }
 
@@ -115,6 +117,10 @@ final class MpvPlayer {
     }
 
     // Keep ownership until termination is confirmed; never launch over a stuck child.
+    synchronized boolean currentAlive() {
+        return active != null && active.isAlive();
+    }
+
     synchronized void stop() {
         if (active == null) return;
         boolean interrupted = Thread.interrupted();
@@ -185,6 +191,9 @@ final class MpvPlayer {
         ArrayList<String> cmd = new ArrayList<>();
         cmd.add(mpv);
         cmd.add("--hwdec=auto-safe");
+        cmd.add("--network-timeout=20");
+        cmd.add("--cache-pause=yes");
+        cmd.add("--cache-pause-wait=2");
         cmd.add("--force-media-title=" + safe(title));
         cmd.add("--audio-client-name=Streamflix");
         addHeaders(cmd, video);

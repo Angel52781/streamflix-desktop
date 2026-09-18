@@ -55,6 +55,16 @@ final class EmbeddedPlayerWindow extends JFrame {
     private volatile MpvIpcClient ipc;
     private volatile boolean closing;
     private volatile double durationSeconds;
+    private boolean updatingTimeline;
+    private boolean updatingVolume;
+    private volatile Models.Video currentVideo;
+    private volatile String currentServerName;
+    private volatile long currentRequestId;
+    private volatile double lastKnownTime;
+    private int consecutiveRefreshFailures;
+    private int stalledTicks;
+    private int recoveryAttempts;
+    private boolean recovering;
     private final Window appOwner;
     private boolean fullScreen;
     private boolean minimizedByApplication;
@@ -75,7 +85,7 @@ final class EmbeddedPlayerWindow extends JFrame {
         videoSurface.setFocusable(true);
 
         installActions();
-        refreshTimer = new Timer(700, e -> refreshStateAsync());
+        refreshTimer = new Timer(1000, e -> refreshStateAsync());
         refreshTimer.setCoalesce(true);
         chromeHideTimer = new Timer(2400, e -> {
             if (fullScreen) chromeBottom.setVisible(false);
@@ -199,42 +209,70 @@ final class EmbeddedPlayerWindow extends JFrame {
     void start(Models.Video video, String serverName, long requestId) throws Exception {
         if (closing || !isDisplayable()) throw new IllegalStateException("El reproductor fue cerrado.");
 
+        currentVideo = video;
+        currentServerName = serverName;
+        currentRequestId = requestId;
+        lastKnownTime = 0;
+        consecutiveRefreshFailures = 0;
+        stalledTicks = 0;
+        recoveryAttempts = 0;
+        recovering = false;
+
+        MpvIpcClient previous = ipc;
+        ipc = null;
+        if (previous != null) previous.close();
+
         long hwnd = windowHandle();
         String pipePath = "\\\\.\\pipe\\streamflix-mpv-" + UUID.randomUUID();
         setPreparing("Conectando con " + serverName + "…");
 
         MpvPlayer.playEmbedded(video, mediaTitle.getText(), requestId, hwnd, pipePath);
         MpvIpcClient client = MpvIpcClient.connect(pipePath, 5000);
-        if (closing || !isDisplayable()) {
-            client.close();
-            throw new IllegalStateException("El reproductor fue cerrado.");
-        }
-        this.ipc = client;
-
-        waitUntilMediaReady(client, 30000);
 
         try {
-            Object rawVolume = client.getProperty("volume");
-            if (rawVolume instanceof Number n) {
-                SwingUtilities.invokeLater(() -> volume.setValue((int) Math.round(n.doubleValue())));
+            if (closing || !isDisplayable()) {
+                throw new IllegalStateException("El reproductor fue cerrado.");
             }
-        } catch (Exception ignored) {}
 
-        refreshTracks();
+            waitUntilMediaReady(client, 30000);
 
-        SwingUtilities.invokeLater(() -> {
-            serverLabel.setText("Servidor · " + serverName);
-            status.setForeground(Theme.MUTED);
-            status.setText("Reproduciendo");
-            loadingProgress.setIndeterminate(false);
-            playPause.setText("Pausar");
-            showStage(CARD_VIDEO);
-            refreshTimer.start();
-        });
+            try {
+                Object rawVolume = client.getProperty("volume");
+                if (rawVolume instanceof Number n) {
+                    SwingUtilities.invokeLater(() -> {
+                        updatingVolume = true;
+                        try {
+                            volume.setValue((int) Math.round(n.doubleValue()));
+                        } finally {
+                            updatingVolume = false;
+                        }
+                    });
+                }
+            } catch (Exception ignored) {}
+
+            this.ipc = client;
+            refreshTracks();
+
+            SwingUtilities.invokeLater(() -> {
+                serverLabel.setText("Servidor · " + serverName);
+                status.setForeground(Theme.MUTED);
+                status.setText("Reproduciendo");
+                loadingProgress.setIndeterminate(false);
+                playPause.setText("Pausar");
+                showStage(CARD_VIDEO);
+                refreshTimer.start();
+            });
+        } catch (Exception ex) {
+            client.close();
+            if (this.ipc == client) this.ipc = null;
+            try { MpvPlayer.stopCurrent(); } catch (RuntimeException ignored) {}
+            throw ex;
+        }
     }
 
     void showFailure(String message) {
         SwingUtilities.invokeLater(() -> {
+            refreshTimer.stop();
             loadingProgress.setIndeterminate(false);
             loadingTitle.setText("No se pudo reproducir");
             loadingDetail.setText(message);
@@ -373,7 +411,7 @@ final class EmbeddedPlayerWindow extends JFrame {
 
         timeline.addChangeListener(this::timelineChanged);
         volume.addChangeListener(e -> {
-            if (!volume.getValueIsAdjusting()) {
+            if (!updatingVolume && !volume.getValueIsAdjusting()) {
                 runCommand(() -> requireIpc().setProperty("volume", volume.getValue()));
             }
         });
@@ -383,9 +421,13 @@ final class EmbeddedPlayerWindow extends JFrame {
     }
 
     private void timelineChanged(ChangeEvent e) {
-        if (timeline.getValueIsAdjusting() || durationSeconds <= 0) return;
+        if (!shouldSeekTimeline(updatingTimeline, timeline.getValueIsAdjusting(), durationSeconds)) return;
         double target = durationSeconds * timeline.getValue() / 1000.0;
         runCommand(() -> requireIpc().setProperty("time-pos", target));
+    }
+
+    static boolean shouldSeekTimeline(boolean programmaticUpdate, boolean adjusting, double durationSeconds) {
+        return !programmaticUpdate && !adjusting && durationSeconds > 0;
     }
 
     private void togglePause() {
@@ -445,14 +487,14 @@ final class EmbeddedPlayerWindow extends JFrame {
             } catch (Exception ex) {
                 last = ex;
             }
-            Thread.sleep(120);
+            Thread.sleep(250);
         }
         if (last != null) throw last;
         throw new IllegalStateException("El video no terminó de cargar.");
     }
 
     private void refreshStateAsync() {
-        if (ipc == null || closing || !refreshInFlight.compareAndSet(false, true)) return;
+        if (ipc == null || closing || recovering || !refreshInFlight.compareAndSet(false, true)) return;
 
         new SwingWorker<PlayerState, Void>() {
             @Override protected PlayerState doInBackground() throws Exception {
@@ -460,27 +502,148 @@ final class EmbeddedPlayerWindow extends JFrame {
                 Object timeRaw = client.getProperty("time-pos");
                 Object durationRaw = client.getProperty("duration");
                 Object pauseRaw = client.getProperty("pause");
+                Object cacheRaw = client.getProperty("paused-for-cache");
+                Object eofRaw = client.getProperty("eof-reached");
 
                 double time = timeRaw instanceof Number n ? n.doubleValue() : 0.0;
                 double duration = durationRaw instanceof Number n ? n.doubleValue() : 0.0;
                 boolean paused = pauseRaw instanceof Boolean b && b;
-                return new PlayerState(time, duration, paused);
+                boolean pausedForCache = cacheRaw instanceof Boolean b && b;
+                boolean eofReached = eofRaw instanceof Boolean b && b;
+                return new PlayerState(time, duration, paused, pausedForCache, eofReached);
             }
 
             @Override protected void done() {
                 refreshInFlight.set(false);
-                if (closing) return;
+                if (closing || recovering) return;
 
                 try {
                     PlayerState state = get();
+                    consecutiveRefreshFailures = 0;
                     durationSeconds = state.duration();
+
                     if (!timeline.getValueIsAdjusting() && state.duration() > 0) {
-                        timeline.setValue((int) Math.max(0, Math.min(1000,
-                                Math.round(state.time() / state.duration() * 1000))));
+                        updatingTimeline = true;
+                        try {
+                            timeline.setValue((int) Math.max(0, Math.min(1000,
+                                    Math.round(state.time() / state.duration() * 1000))));
+                        } finally {
+                            updatingTimeline = false;
+                        }
                     }
+
                     timeLabel.setText(formatTime(state.time()) + " / " + formatTime(state.duration()));
                     playPause.setText(state.paused() ? "Reanudar" : "Pausar");
-                } catch (Exception ignored) {}
+
+                    if (state.eofReached()) {
+                        stalledTicks = 0;
+                        lastKnownTime = state.time();
+                        status.setText("Finalizado");
+                        return;
+                    }
+
+                    boolean moved = Math.abs(state.time() - lastKnownTime) >= 0.20;
+                    if (moved) {
+                        lastKnownTime = state.time();
+                        stalledTicks = 0;
+                        if (!state.paused()) status.setText("Reproduciendo");
+                    } else if (state.paused()) {
+                        stalledTicks = 0;
+                    } else {
+                        stalledTicks++;
+                        if (state.pausedForCache()) status.setText("Cargando…");
+                    }
+
+                    // A short CDN hiccup should be absorbed by mpv's cache. Only
+                    // recover after a genuinely prolonged stall.
+                    if (!state.paused() && stalledTicks >= 20) {
+                        requestRecovery(state.pausedForCache()
+                                ? "El servidor dejó de entregar datos."
+                                : "La reproducción dejó de avanzar.");
+                    }
+                } catch (Exception ex) {
+                    consecutiveRefreshFailures++;
+                    boolean processGone = !MpvPlayer.isCurrentAlive();
+                    if (processGone || consecutiveRefreshFailures >= 3) {
+                        requestRecovery(processGone
+                                ? "El motor de reproducción se cerró inesperadamente."
+                                : "Se perdió la comunicación con el reproductor.");
+                    }
+                }
+            }
+        }.execute();
+    }
+
+    private void requestRecovery(String reason) {
+        if (closing || recovering || currentVideo == null) return;
+
+        if (recoveryAttempts >= 1) {
+            refreshTimer.stop();
+            showFailure("La reproducción se detuvo y no pudo recuperarse automáticamente.");
+            return;
+        }
+
+        recoveryAttempts++;
+        recovering = true;
+        refreshTimer.stop();
+
+        double resumeAt = Math.max(0.0, lastKnownTime - 0.5);
+        Models.Video video = currentVideo;
+        String serverName = currentServerName == null ? "servidor" : currentServerName;
+        long requestId = currentRequestId;
+
+        setPreparing("Recuperando reproducción…");
+
+        MpvIpcClient previous = ipc;
+        ipc = null;
+        if (previous != null) previous.close();
+
+        new SwingWorker<MpvIpcClient, Void>() {
+            @Override protected MpvIpcClient doInBackground() throws Exception {
+                long hwnd = windowHandle();
+                String pipePath = "\\\\.\\pipe\\streamflix-mpv-" + UUID.randomUUID();
+
+                MpvPlayer.playEmbedded(video, mediaTitle.getText(), requestId, hwnd, pipePath);
+                MpvIpcClient client = MpvIpcClient.connect(pipePath, 5000);
+                try {
+                    waitUntilMediaReady(client, 30000);
+                    if (resumeAt > 1.0) {
+                        client.command(List.of("seek", resumeAt, "absolute+exact"));
+                    }
+                    return client;
+                } catch (Exception ex) {
+                    client.close();
+                    try { MpvPlayer.stopCurrent(); } catch (RuntimeException ignored) {}
+                    throw ex;
+                }
+            }
+
+            @Override protected void done() {
+                if (closing) {
+                    recovering = false;
+                    return;
+                }
+
+                try {
+                    ipc = get();
+                    consecutiveRefreshFailures = 0;
+                    stalledTicks = 0;
+                    lastKnownTime = resumeAt;
+                    recovering = false;
+
+                    serverLabel.setText("Servidor · " + serverName);
+                    status.setForeground(Theme.MUTED);
+                    status.setText("Reproduciendo");
+                    loadingProgress.setIndeterminate(false);
+                    playPause.setText("Pausar");
+                    showStage(CARD_VIDEO);
+                    refreshTracks();
+                    refreshTimer.start();
+                } catch (Exception ex) {
+                    recovering = false;
+                    refreshTimer.stop();
+                    showFailure("No se pudo recuperar la reproducción. " + reason);
+                }
             }
         }.execute();
     }
@@ -667,6 +830,7 @@ final class EmbeddedPlayerWindow extends JFrame {
         @Override public String toString() { return label; }
     }
 
-    private record PlayerState(double time, double duration, boolean paused) {}
+    private record PlayerState(double time, double duration, boolean paused,
+                               boolean pausedForCache, boolean eofReached) {}
     private record Tracks(List<TrackOption> audio, List<TrackOption> subtitles) {}
 }
