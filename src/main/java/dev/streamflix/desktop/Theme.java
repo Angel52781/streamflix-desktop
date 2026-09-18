@@ -5,48 +5,179 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 
 final class Theme {
-    static final Color BG = new Color(18, 18, 20);
-    static final Color PANEL = new Color(27, 27, 31);
-    static final Color PANEL_ALT = new Color(36, 36, 42);
-    static final Color TEXT = new Color(242, 242, 245);
-    static final Color MUTED = new Color(165, 165, 175);
-    static final Color ACCENT = new Color(229, 9, 20);
+    static final Color BG = new Color(10, 12, 17);
+    static final Color SIDEBAR = new Color(14, 17, 24);
+    static final Color PANEL = new Color(19, 23, 32);
+    static final Color PANEL_ALT = new Color(25, 30, 42);
+    static final Color HOVER = new Color(31, 37, 51);
+    static final Color BORDER = new Color(42, 49, 64);
+    static final Color TEXT = new Color(246, 247, 249);
+    static final Color MUTED = new Color(151, 160, 178);
+    static final Color MUTED_2 = new Color(110, 119, 137);
+    static final Color ACCENT = new Color(231, 43, 53);
+    static final Color ACCENT_HOVER = new Color(248, 62, 72);
+    static final Color DANGER = new Color(255, 118, 118);
+
+    static final Font FONT = new Font("Segoe UI", Font.PLAIN, 14);
+    static final Font FONT_BOLD = new Font("Segoe UI Semibold", Font.PLAIN, 14);
 
     private Theme() {}
 
     static void install() {
+        UIManager.put("defaultFont", FONT);
         UIManager.put("Panel.background", BG);
         UIManager.put("Viewport.background", BG);
         UIManager.put("ScrollPane.background", BG);
         UIManager.put("Label.foreground", TEXT);
+        UIManager.put("Button.font", FONT);
+        UIManager.put("ComboBox.font", FONT);
+        UIManager.put("TextField.font", FONT);
+        UIManager.put("List.font", FONT);
         UIManager.put("Button.background", PANEL_ALT);
         UIManager.put("Button.foreground", TEXT);
         UIManager.put("TextField.background", PANEL_ALT);
         UIManager.put("TextField.foreground", TEXT);
         UIManager.put("TextField.caretForeground", TEXT);
+        UIManager.put("TextField.selectionBackground", ACCENT);
         UIManager.put("TextField.border", BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(70,70,80)), new EmptyBorder(7,9,7,9)));
+                BorderFactory.createLineBorder(BORDER), new EmptyBorder(9, 12, 9, 12)));
         UIManager.put("ComboBox.background", PANEL_ALT);
         UIManager.put("ComboBox.foreground", TEXT);
+        UIManager.put("ComboBox.selectionBackground", HOVER);
+        UIManager.put("ComboBox.selectionForeground", TEXT);
         UIManager.put("List.background", PANEL);
         UIManager.put("List.foreground", TEXT);
+        UIManager.put("List.selectionBackground", HOVER);
+        UIManager.put("List.selectionForeground", TEXT);
         UIManager.put("OptionPane.background", PANEL);
         UIManager.put("OptionPane.messageForeground", TEXT);
         UIManager.put("ToolTip.background", PANEL_ALT);
         UIManager.put("ToolTip.foreground", TEXT);
+        UIManager.put("ToolTip.border", BorderFactory.createLineBorder(BORDER));
+        UIManager.put("ScrollBar.thumb", BORDER);
+        UIManager.put("ScrollBar.track", BG);
     }
 
     static JButton button(String text) {
-        JButton b = new JButton(text);
-        b.setFocusPainted(false);
-        b.setBorder(new EmptyBorder(9, 14, 9, 14));
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return new FlatButton(text, false, false);
+    }
+
+    static JButton primaryButton(String text) {
+        return new FlatButton(text, true, false);
+    }
+
+    static JButton navButton(String text) {
+        FlatButton b = new FlatButton(text, false, true);
+        b.setHorizontalAlignment(SwingConstants.LEFT);
+        b.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+        b.setPreferredSize(new Dimension(188, 42));
         return b;
+    }
+
+    static void setNavSelected(JButton button, boolean selected) {
+        if (button instanceof FlatButton flat) {
+            flat.setSelectedState(selected);
+        } else {
+            button.setBackground(selected ? PANEL_ALT : SIDEBAR);
+        }
     }
 
     static JLabel muted(String text) {
         JLabel l = new JLabel(text);
         l.setForeground(MUTED);
+        l.setFont(FONT);
         return l;
+    }
+
+    static JLabel eyebrow(String text) {
+        JLabel l = new JLabel(text == null ? "" : text.toUpperCase());
+        l.setForeground(MUTED_2);
+        l.setFont(FONT_BOLD.deriveFont(11f));
+        return l;
+    }
+
+    static JLabel heading(String text, float size) {
+        JLabel l = new JLabel(text);
+        l.setForeground(TEXT);
+        l.setFont(FONT_BOLD.deriveFont(size));
+        return l;
+    }
+
+    static JPanel surface() {
+        JPanel p = new JPanel();
+        p.setBackground(PANEL);
+        p.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER),
+                new EmptyBorder(16, 16, 16, 16)));
+        return p;
+    }
+
+    private static final class FlatButton extends JButton {
+        private final boolean primary;
+        private final boolean navigation;
+        private boolean hovered;
+        private boolean selectedState;
+
+        FlatButton(String text, boolean primary, boolean navigation) {
+            super(text);
+            this.primary = primary;
+            this.navigation = navigation;
+            setFont(FONT_BOLD);
+            setForeground(TEXT);
+            setFocusPainted(false);
+            setBorderPainted(false);
+            setContentAreaFilled(false);
+            setOpaque(false);
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            setBorder(new EmptyBorder(navigation ? 11 : 9, navigation ? 13 : 15,
+                    navigation ? 11 : 9, navigation ? 13 : 15));
+            addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override public void mouseEntered(java.awt.event.MouseEvent e) {
+                    hovered = true;
+                    repaint();
+                }
+                @Override public void mouseExited(java.awt.event.MouseEvent e) {
+                    hovered = false;
+                    repaint();
+                }
+            });
+        }
+
+        void setSelectedState(boolean selected) {
+            this.selectedState = selected;
+            repaint();
+        }
+
+        @Override protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                Color bg;
+                if (!isEnabled()) {
+                    bg = new Color(PANEL_ALT.getRed(), PANEL_ALT.getGreen(), PANEL_ALT.getBlue(), 110);
+                } else if (primary) {
+                    bg = hovered ? ACCENT_HOVER : ACCENT;
+                } else if (selectedState) {
+                    bg = PANEL_ALT;
+                } else if (hovered) {
+                    bg = HOVER;
+                } else {
+                    bg = navigation ? SIDEBAR : PANEL_ALT;
+                }
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                if (!primary && !navigation) {
+                    g2.setColor(BORDER);
+                    g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
+                }
+                if (selectedState && navigation) {
+                    g2.setColor(ACCENT);
+                    g2.fillRoundRect(0, 7, 3, Math.max(0, getHeight() - 14), 3, 3);
+                }
+            } finally {
+                g2.dispose();
+            }
+            super.paintComponent(g);
+        }
     }
 }
