@@ -250,8 +250,14 @@ final class MainFrame extends JFrame {
         homeScroll.setViewportView(homeViewport);
         homeScroll.setBorder(null);
         homeScroll.getViewport().setBackground(Theme.BG);
-        homeScroll.getVerticalScrollBar().setUnitIncrement(24);
+        homeScroll.getVerticalScrollBar().setUnitIncrement(28);
         homeScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        homeScroll.setWheelScrollingEnabled(false);
+        homeScroll.addMouseWheelListener(e -> {
+            if (e.isConsumed()) return;
+            scrollBarBy(homeScroll.getVerticalScrollBar(), e.getPreciseWheelRotation(), 92);
+            e.consume();
+        });
 
         detailHost.setBackground(Theme.BG);
         contentStack.add(homeScroll, Mode.HOME.name());
@@ -556,19 +562,31 @@ final class MainFrame extends JFrame {
         next.addActionListener(e ->
                 scrollBarBy(horizontal, 1.0, Math.max(240, scroll.getViewport().getWidth() - 100)));
 
-        scroll.addMouseWheelListener(e -> {
-            int hotZoneStart = Math.max(92, (int) Math.round(scroll.getHeight() * 0.56));
-            boolean horizontalZone = e.getY() >= hotZoneStart;
+        MouseWheelListener railWheel = e -> {
             boolean canScrollHorizontally = horizontal.getMaximum() - horizontal.getMinimum()
                     > horizontal.getVisibleAmount();
 
-            if ((horizontalZone || e.isShiftDown()) && canScrollHorizontally) {
-                scrollBarBy(horizontal, e.getPreciseWheelRotation(), 84);
+            if (canScrollHorizontally) {
+                int min = horizontal.getMinimum();
+                int max = Math.max(min, horizontal.getMaximum() - horizontal.getVisibleAmount());
+                double rotation = e.getPreciseWheelRotation();
+                boolean towardStart = rotation < 0.0;
+                boolean towardEnd = rotation > 0.0;
+                boolean canMoveInDirection = (towardStart && horizontal.getValue() > min)
+                        || (towardEnd && horizontal.getValue() < max);
+
+                if (canMoveInDirection || e.isShiftDown()) {
+                    scrollBarBy(horizontal, rotation, 118);
+                } else {
+                    // At either end of the rail, keep the page from feeling trapped.
+                    scrollBarBy(homeScroll.getVerticalScrollBar(), rotation, 92);
+                }
             } else {
-                scrollBarBy(homeScroll.getVerticalScrollBar(), e.getPreciseWheelRotation(), 58);
+                scrollBarBy(homeScroll.getVerticalScrollBar(), e.getPreciseWheelRotation(), 92);
             }
             e.consume();
-        });
+        };
+        installMouseWheelListenerRecursively(section, railWheel);
 
         scroll.addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent e) {
@@ -582,12 +600,51 @@ final class MainFrame extends JFrame {
         return section;
     }
 
+    private static void installMouseWheelListenerRecursively(
+            Component component, MouseWheelListener listener) {
+        component.addMouseWheelListener(listener);
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                installMouseWheelListenerRecursively(child, listener);
+            }
+        }
+    }
+
     private static void scrollBarBy(JScrollBar bar, double preciseRotation, int pixelsPerNotch) {
         if (bar == null || !Double.isFinite(preciseRotation) || preciseRotation == 0.0) return;
-        int delta = (int) Math.round(preciseRotation * pixelsPerNotch);
+
         int min = bar.getMinimum();
         int max = Math.max(min, bar.getMaximum() - bar.getVisibleAmount());
-        bar.setValue(Math.max(min, Math.min(max, bar.getValue() + delta)));
+        Timer activeTimer = (Timer) bar.getClientProperty("streamflix.smoothScrollTimer");
+        Object targetProperty = bar.getClientProperty("streamflix.smoothScrollTarget");
+        double base = activeTimer != null && activeTimer.isRunning() && targetProperty instanceof Double target
+                ? target
+                : bar.getValue();
+        double target = Math.max(min, Math.min(max, base + preciseRotation * pixelsPerNotch));
+        bar.putClientProperty("streamflix.smoothScrollTarget", target);
+
+        if (activeTimer != null && activeTimer.isRunning()) return;
+
+        Timer timer = new Timer(16, null);
+        timer.setCoalesce(true);
+        timer.addActionListener(e -> {
+            Object value = bar.getClientProperty("streamflix.smoothScrollTarget");
+            double desired = value instanceof Double d ? d : bar.getValue();
+            int current = bar.getValue();
+            double distance = desired - current;
+
+            if (Math.abs(distance) <= 1.0) {
+                bar.setValue((int) Math.round(desired));
+                ((Timer) e.getSource()).stop();
+                return;
+            }
+
+            int step = (int) Math.round(distance * 0.24);
+            if (step == 0) step = distance > 0 ? 1 : -1;
+            bar.setValue(Math.max(min, Math.min(max, current + step)));
+        });
+        bar.putClientProperty("streamflix.smoothScrollTimer", timer);
+        timer.start();
     }
 
     private void renderHomeError(Throwable error) {
