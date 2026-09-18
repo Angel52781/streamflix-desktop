@@ -46,8 +46,10 @@ final class EmbeddedPlayerWindow extends JFrame {
     private final JSlider volume = new JSlider(0, 100, 80);
     private final JButton audioButton = Theme.button("Audio");
     private final JButton subtitleButton = Theme.button("Subtítulos");
+    private final JButton qualityButton = Theme.button("Calidad · Auto");
     private final JPopupMenu audioMenu = new JPopupMenu();
     private final JPopupMenu subtitleMenu = new JPopupMenu();
+    private final JPopupMenu qualityMenu = new JPopupMenu();
 
     private final Timer refreshTimer;
     private final Timer chromeHideTimer;
@@ -66,11 +68,14 @@ final class EmbeddedPlayerWindow extends JFrame {
     private int recoveryAttempts;
     private boolean recovering;
     private ProgressListener progressListener;
+    private Runnable playbackIssueListener = () -> {};
     private long lastProgressPublishNanos;
     private final Window appOwner;
     private boolean fullScreen;
     private boolean minimizedByApplication;
     private boolean restoreFullscreenAfterApplicationRestore;
+    private Rectangle windowedBounds;
+    private String currentHlsBitrateOverride;
 
     private EmbeddedPlayerWindow(Window owner, String title) {
         super("Streamflix · " + title);
@@ -83,6 +88,7 @@ final class EmbeddedPlayerWindow extends JFrame {
         setContentPane(buildUi());
 
         mediaTitle.setText(title);
+        qualityButton.setText("Calidad · " + PlaybackSettings.qualityLabel(PlaybackSettings.qualityProfile()));
         serverLabel.setVisible(false);
         videoSurface.setBackground(Color.BLACK);
         videoSurface.setFocusable(true);
@@ -90,9 +96,11 @@ final class EmbeddedPlayerWindow extends JFrame {
         installActions();
         refreshTimer = new Timer(1000, e -> refreshStateAsync());
         refreshTimer.setCoalesce(true);
-        chromeHideTimer = new Timer(2400, e -> {
-            chromeTop.setVisible(false);
-            chromeBottom.setVisible(false);
+        chromeHideTimer = new Timer(2800, e -> {
+            if (fullScreen) {
+                chromeTop.setVisible(false);
+                chromeBottom.setVisible(false);
+            }
         });
         chromeHideTimer.setRepeats(false);
 
@@ -157,6 +165,10 @@ final class EmbeddedPlayerWindow extends JFrame {
 
     void setProgressListener(ProgressListener listener) {
         this.progressListener = listener;
+    }
+
+    void setPlaybackIssueListener(Runnable listener) {
+        this.playbackIssueListener = listener == null ? () -> {} : listener;
     }
 
     static void onApplicationStateChanged(int state) {
@@ -229,6 +241,8 @@ final class EmbeddedPlayerWindow extends JFrame {
         stalledTicks = 0;
         recoveryAttempts = 0;
         recovering = false;
+        currentHlsBitrateOverride = null;
+        qualityButton.setText("Calidad · " + PlaybackSettings.qualityLabel(PlaybackSettings.qualityProfile()));
         lastProgressPublishNanos = 0L;
 
         MpvIpcClient previous = ipc;
@@ -239,7 +253,8 @@ final class EmbeddedPlayerWindow extends JFrame {
         String pipePath = "\\\\.\\pipe\\streamflix-mpv-" + UUID.randomUUID();
         setPreparing("Conectando con " + serverName + "…");
 
-        MpvPlayer.playEmbedded(video, mediaTitle.getText(), requestId, hwnd, pipePath);
+        MpvPlayer.playEmbedded(
+                video, mediaTitle.getText(), requestId, hwnd, pipePath, currentHlsBitrateOverride);
         MpvIpcClient client = MpvIpcClient.connect(pipePath, 5000);
 
         try {
@@ -380,11 +395,13 @@ final class EmbeddedPlayerWindow extends JFrame {
 
         audioButton.setToolTipText("Seleccionar pista de audio");
         subtitleButton.setToolTipText("Seleccionar subtítulos");
+        qualityButton.setToolTipText("Calidad y uso de datos");
         fullscreen.setToolTipText("Pantalla completa (F)");
         fullscreen.setPreferredSize(new Dimension(48, 36));
         audioButton.setEnabled(false);
         subtitleButton.setEnabled(false);
 
+        tracks.add(qualityButton);
         tracks.add(audioButton);
         tracks.add(subtitleButton);
         tracks.add(fullscreen);
@@ -439,6 +456,7 @@ final class EmbeddedPlayerWindow extends JFrame {
 
         audioButton.addActionListener(e -> showTrackMenu(audioButton, audioMenu));
         subtitleButton.addActionListener(e -> showTrackMenu(subtitleButton, subtitleMenu));
+        qualityButton.addActionListener(e -> showQualityMenu());
     }
 
     private void timelineChanged(ChangeEvent e) {
@@ -467,15 +485,23 @@ final class EmbeddedPlayerWindow extends JFrame {
     private void toggleFullscreen() {
         GraphicsDevice device = getGraphicsConfiguration().getDevice();
         if (!fullScreen) {
+            windowedBounds = getBounds();
+            chromeHideTimer.stop();
             device.setFullScreenWindow(this);
             fullScreen = true;
             revealChrome();
         } else {
+            chromeHideTimer.stop();
             device.setFullScreenWindow(null);
             fullScreen = false;
-            setSize(1320, 820);
-            setLocationRelativeTo(appOwner);
-            revealChrome();
+            chromeTop.setVisible(true);
+            chromeBottom.setVisible(true);
+            if (windowedBounds != null && windowedBounds.width > 0 && windowedBounds.height > 0) {
+                setBounds(windowedBounds);
+            } else {
+                setSize(1320, 820);
+                setLocationRelativeTo(appOwner);
+            }
         }
         videoSurface.requestFocusInWindow();
     }
@@ -483,7 +509,8 @@ final class EmbeddedPlayerWindow extends JFrame {
     private void revealChrome() {
         chromeTop.setVisible(true);
         chromeBottom.setVisible(true);
-        chromeHideTimer.restart();
+        if (fullScreen) chromeHideTimer.restart();
+        else chromeHideTimer.stop();
     }
 
     private void showStage(String card) {
@@ -573,7 +600,9 @@ final class EmbeddedPlayerWindow extends JFrame {
                     // recover after a genuinely prolonged stall.
                     publishProgress(state.time(), state.duration());
 
-                    if (!state.paused() && stalledTicks >= 20) {
+                    boolean automaticQuality = "auto".equals(PlaybackSettings.qualityProfile());
+                    int recoveryThreshold = state.pausedForCache() && automaticQuality ? 6 : 20;
+                    if (!state.paused() && stalledTicks >= recoveryThreshold) {
                         requestRecovery(state.pausedForCache()
                                 ? "El servidor dejó de entregar datos."
                                 : "La reproducción dejó de avanzar.");
@@ -609,10 +638,19 @@ final class EmbeddedPlayerWindow extends JFrame {
     private void requestRecovery(String reason) {
         if (closing || recovering || currentVideo == null) return;
 
-        if (recoveryAttempts >= 1) {
+        try { playbackIssueListener.run(); } catch (RuntimeException ignored) {}
+
+        boolean automaticQuality = "auto".equals(PlaybackSettings.qualityProfile());
+        int maxRecoveries = automaticQuality ? 2 : 1;
+        if (recoveryAttempts >= maxRecoveries) {
             refreshTimer.stop();
             showFailure("La reproducción se detuvo y no pudo recuperarse automáticamente.");
             return;
+        }
+
+        if (automaticQuality) {
+            currentHlsBitrateOverride = recoveryAttempts == 0 ? "2500000" : "1500000";
+            qualityButton.setText("Calidad · Auto ↓");
         }
 
         recoveryAttempts++;
@@ -624,7 +662,9 @@ final class EmbeddedPlayerWindow extends JFrame {
         String serverName = currentServerName == null ? "servidor" : currentServerName;
         long requestId = currentRequestId;
 
-        setPreparing("Recuperando reproducción…");
+        setPreparing(automaticQuality
+                ? "Ajustando calidad a tu conexión…"
+                : "Recuperando reproducción…");
 
         MpvIpcClient previous = ipc;
         ipc = null;
@@ -635,7 +675,8 @@ final class EmbeddedPlayerWindow extends JFrame {
                 long hwnd = windowHandle();
                 String pipePath = "\\\\.\\pipe\\streamflix-mpv-" + UUID.randomUUID();
 
-                MpvPlayer.playEmbedded(video, mediaTitle.getText(), requestId, hwnd, pipePath);
+                MpvPlayer.playEmbedded(
+                        video, mediaTitle.getText(), requestId, hwnd, pipePath, currentHlsBitrateOverride);
                 MpvIpcClient client = MpvIpcClient.connect(pipePath, 5000);
                 try {
                     waitUntilMediaReady(client, 30000);
@@ -758,6 +799,114 @@ final class EmbeddedPlayerWindow extends JFrame {
         } else {
             button.setText(allowOff ? "Subtítulos" : "Audio");
         }
+    }
+
+    private void showQualityMenu() {
+        qualityMenu.removeAll();
+        qualityMenu.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Theme.BORDER),
+                BorderFactory.createEmptyBorder(6, 6, 6, 6)));
+        qualityMenu.setBackground(Theme.PANEL);
+
+        String current = PlaybackSettings.qualityProfile();
+        ButtonGroup group = new ButtonGroup();
+        addQualityOption(group, "Automática", "auto", current);
+        addQualityOption(group, "Ahorro de datos · ~1.5 Mbps", "saver", current);
+        addQualityOption(group, "Equilibrada · ~3 Mbps", "balanced", current);
+        addQualityOption(group, "Alta · ~6 Mbps", "high", current);
+        addQualityOption(group, "Máxima disponible", "max", current);
+
+        Dimension preferred = qualityMenu.getPreferredSize();
+        int x = Math.max(0, qualityButton.getWidth() - preferred.width);
+        int y = -preferred.height - 6;
+        qualityMenu.show(qualityButton, x, y);
+    }
+
+    private void addQualityOption(ButtonGroup group, String label, String profile, String current) {
+        JRadioButtonMenuItem option = new JRadioButtonMenuItem(label);
+        option.setFont(Theme.FONT.deriveFont(12.5f));
+        option.setForeground(Theme.TEXT);
+        option.setBackground(Theme.PANEL);
+        option.setSelected(profile.equals(current));
+        option.addActionListener(e -> applyQualityProfile(profile));
+        group.add(option);
+        qualityMenu.add(option);
+    }
+
+    private void applyQualityProfile(String profile) {
+        PlaybackSettings.saveQualityProfile(profile);
+        currentHlsBitrateOverride = null;
+        recoveryAttempts = 0;
+        qualityButton.setText("Calidad · " + PlaybackSettings.qualityLabel(profile));
+
+        if (ipc != null && currentVideo != null && !recovering) {
+            restartForQuality(Math.max(0.0, lastKnownTime - 0.25), profile);
+        }
+    }
+
+    private void restartForQuality(double resumeAt, String profile) {
+        if (closing || recovering || currentVideo == null) return;
+
+        recovering = true;
+        refreshTimer.stop();
+
+        Models.Video video = currentVideo;
+        String serverName = currentServerName == null ? "servidor" : currentServerName;
+        long requestId = currentRequestId;
+
+        setPreparing("Aplicando calidad " + PlaybackSettings.qualityLabel(profile) + "…");
+
+        MpvIpcClient previous = ipc;
+        ipc = null;
+        if (previous != null) previous.close();
+
+        new SwingWorker<MpvIpcClient, Void>() {
+            @Override protected MpvIpcClient doInBackground() throws Exception {
+                long hwnd = windowHandle();
+                String pipePath = "\\\\.\\pipe\\streamflix-mpv-" + UUID.randomUUID();
+
+                MpvPlayer.playEmbedded(video, mediaTitle.getText(), requestId, hwnd, pipePath);
+                MpvIpcClient client = MpvIpcClient.connect(pipePath, 5000);
+                try {
+                    waitUntilMediaReady(client, 30000);
+                    if (resumeAt > 1.0) {
+                        client.command(List.of("seek", resumeAt, "absolute+exact"));
+                    }
+                    return client;
+                } catch (Exception ex) {
+                    client.close();
+                    try { MpvPlayer.stopCurrent(); } catch (RuntimeException ignored) {}
+                    throw ex;
+                }
+            }
+
+            @Override protected void done() {
+                if (closing) {
+                    recovering = false;
+                    return;
+                }
+
+                try {
+                    ipc = get();
+                    consecutiveRefreshFailures = 0;
+                    stalledTicks = 0;
+                    lastKnownTime = resumeAt;
+                    recovering = false;
+                    status.setForeground(Theme.MUTED);
+                    status.setText("Reproduciendo");
+                    loadingProgress.setIndeterminate(false);
+                    playPause.setText("Pausar");
+                    showStage(CARD_VIDEO);
+                    refreshTracks();
+                    refreshTimer.start();
+                    revealChrome();
+                } catch (Exception ex) {
+                    recovering = false;
+                    refreshTimer.stop();
+                    showFailure("No se pudo aplicar la nueva calidad.");
+                }
+            }
+        }.execute();
     }
 
     private static String shortTrackLabel(String label) {

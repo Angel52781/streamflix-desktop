@@ -14,12 +14,14 @@ You can also browse versioned releases and checksums on the [GitHub Releases pag
 
 Version: **1.2.0**
 
-The `main` branch is currently preparing **1.3.0**, focused on the unified TMDb catalog and the streaming UX/UI redesign.
+The `main` branch is currently preparing **1.3.2**, focused on smoother navigation, Home discovery rails and streaming performance.
 
 ### Core experience
 
 - Java 17-compatible JVM application with Swing + FlatLaf
 - Cinematic desktop navigation with Home, Movies, Series, Live TV and Mi lista
+- Home discovery rails for Horror, Thriller, Drama and Comedy
+- Vertical wheel scrolling remains primary; horizontal rails use Shift + wheel
 - Unified TMDb catalog with **English (en-US)** or **Spanish (es-ES)** selected from Settings
 - TMDb API key or Read Access Token configured locally from Settings
 - High-resolution TMDb posters/backdrops with HiDPI-aware image rendering
@@ -38,10 +40,13 @@ The `main` branch is currently preparing **1.3.0**, focused on the unified TMDb 
 - Real fullscreen acquisition on Windows
 - Loading state while extraction/player startup is in progress
 - Automatic server fallback based on playback startup, not extraction success alone
+- Local server ranking learns which hosts start faster and fail less on this machine
 - Manual server selection
 - Playback headers forwarded to mpv
 - Pause/resume, seek ±10 s, timeline, volume, audio-track and subtitle selection
-- Controls auto-hide in windowed and fullscreen playback
+- Stable windowed player chrome; controls auto-hide only in fullscreen
+- Configurable quality: Automatic, Data Saver, Balanced, High and Maximum
+- Automatic HLS quality starts below mpv's maximum-bitrate default and can downgrade after sustained buffering
 - Configurable preferred audio and subtitle language
 - TMDb playback currently certified through VixSrc for movies and episodes in EN/ES
 
@@ -80,7 +85,7 @@ Streamflix accepts either:
 
 The environment variable has precedence.
 
-One TMDb credential works for both TMDb EN and TMDb ES. No real API key is stored in the repository.
+The public desktop build currently uses a **BYOK (bring your own key)** model: each user obtains and configures their own TMDb API key or Read Access Token once. One credential works for both TMDb EN and TMDb ES. No real API key is stored in the repository or public binaries.
 
 ## Build requirements
 
@@ -125,6 +130,7 @@ The build currently runs:
 - UserDataTest
 - MpvPlayerTest
 - PlaybackFallbackTest
+- PlaybackServerStatsTest
 
 Additional opt-in live gates validate real third-party/network behavior and are intentionally not part of deterministic builds.
 

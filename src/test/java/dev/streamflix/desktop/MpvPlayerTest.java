@@ -55,10 +55,11 @@ public final class MpvPlayerTest {
         int en = command.indexOf("--sub-file=en.vtt");
         require(d >= 0 && d < es && es < en, "default then Spanish then English subtitle order");
         require(command.contains("--force-media-title=Title Line"), "title sanitized");
+        require(command.contains("--hls-bitrate=4000000"), "automatic quality caps HLS bitrate");
     }
 
     private static void testPlaybackPreferenceOverrides() {
-        PlaybackSettings.save(true, "en", "off");
+        PlaybackSettings.save(true, "en", "off", "max");
         Models.Video video = new Models.Video(
                 "https://cdn.example/video.m3u8",
                 Map.of(),
@@ -72,8 +73,9 @@ public final class MpvPlayerTest {
         require(command.contains("--alang=en,eng,es,spa,es-ES,es-419"),
                 "English audio preference forwarded");
         require(command.contains("--sid=no"), "subtitles can default to disabled");
+        require(command.contains("--hls-bitrate=max"), "maximum quality profile forwarded");
 
-        PlaybackSettings.save(true, "auto", "es");
+        PlaybackSettings.save(true, "auto", "es", "auto");
     }
 
     private static void testEmbeddedCommand() {
@@ -85,6 +87,10 @@ public final class MpvPlayerTest {
         require(command.contains("--osc=no"), "external mpv OSC disabled");
         require(command.contains("--input-default-bindings=no"), "external bindings disabled");
         require(command.contains("--keep-open=yes"), "embedded playback stays attached");
+
+        List<String> saver = MpvPlayer.embeddedPlaybackCommand(
+                "mpv.exe", video, "Embedded", 12345L, "\\\\.\\pipe\\streamflix-test", "1500000");
+        require(saver.contains("--hls-bitrate=1500000"), "session bitrate override forwarded");
     }
 
     private static void testPlaybackNetworkProfile() {
@@ -95,6 +101,9 @@ public final class MpvPlayerTest {
         require(command.contains("--network-timeout=20"), "dead network reads fail in bounded time");
         require(command.contains("--cache-pause=yes"), "network cache pause enabled");
         require(command.contains("--cache-pause-wait=2"), "cache recovery waits for useful buffer");
+        require(command.contains("--cache=yes"), "network cache forced on");
+        require(command.contains("--cache-secs=45"), "bounded readahead window configured");
+        require(command.contains("--stream-buffer-size=1MiB"), "larger network read buffer configured");
     }
 
     private static void testProgrammaticTimelineRefreshDoesNotSeek() {

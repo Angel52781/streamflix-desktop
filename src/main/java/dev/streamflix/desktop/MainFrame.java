@@ -7,6 +7,7 @@ import java.awt.event.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 final class MainFrame extends JFrame {
     private enum Mode { HOME, MOVIES, SERIES, LIVE, SEARCH, FAVORITES }
@@ -21,6 +22,7 @@ final class MainFrame extends JFrame {
     private final JPanel homeRoot = new JPanel();
     private final JPanel pagingBar = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
     private final JScrollPane catalogScroll = new JScrollPane();
+    private final JScrollPane homeScroll = new JScrollPane();
 
     private final JLabel sectionTitle = Theme.heading("Inicio", 30f);
     private final JLabel sectionSubtitle = Theme.muted("Tu contenido, sin ruido");
@@ -231,10 +233,10 @@ final class MainFrame extends JFrame {
         homeViewport.setBackground(Theme.BG);
         homeViewport.add(homeRoot, BorderLayout.NORTH);
 
-        JScrollPane homeScroll = new JScrollPane(homeViewport);
+        homeScroll.setViewportView(homeViewport);
         homeScroll.setBorder(null);
         homeScroll.getViewport().setBackground(Theme.BG);
-        homeScroll.getVerticalScrollBar().setUnitIncrement(30);
+        homeScroll.getVerticalScrollBar().setUnitIncrement(24);
         homeScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
         detailHost.setBackground(Theme.BG);
@@ -331,10 +333,42 @@ final class MainFrame extends JFrame {
         activeWorker = new SwingWorker<HomeData, Void>() {
             @Override protected HomeData doInBackground() {
                 List<Models.ShowItem> history = UserData.getHistory();
-                List<Models.ShowItem> movies = withSource(movieSource, safeLoad(() -> movieSource.movies(1), 10));
-                List<Models.ShowItem> series = withSource(seriesSource, safeLoad(() -> seriesSource.tvShows(1), 10));
-                List<Models.ShowItem> live = withSource(liveSource, safeLoad(() -> liveSource.tvShows(1), 10));
-                return new HomeData(history.stream().limit(10).toList(), movies, series, live);
+
+                CompletableFuture<List<Models.ShowItem>> moviesFuture =
+                        loadAsync(movieSource, () -> movieSource.movies(1), 10);
+                CompletableFuture<List<Models.ShowItem>> seriesFuture =
+                        loadAsync(seriesSource, () -> seriesSource.tvShows(1), 10);
+                CompletableFuture<List<Models.ShowItem>> liveFuture =
+                        loadAsync(liveSource, () -> liveSource.tvShows(1), 10);
+
+                List<CompletableFuture<HomeShelf>> shelfFutures = new ArrayList<>();
+                if (movieSource instanceof TmdbProvider tmdb && tmdbReady()) {
+                    shelfFutures.add(loadShelfAsync(
+                            "Terror", "Historias para ver con las luces apagadas",
+                            movieSource, () -> tmdb.moviesByGenre(27, 1), 8));
+                    shelfFutures.add(loadShelfAsync(
+                            "Suspenso", "Películas con tensión de principio a fin",
+                            movieSource, () -> tmdb.moviesByGenre(53, 1), 8));
+                    shelfFutures.add(loadShelfAsync(
+                            "Drama", "Historias intensas y personajes memorables",
+                            movieSource, () -> tmdb.moviesByGenre(18, 1), 8));
+                    shelfFutures.add(loadShelfAsync(
+                            "Comedia", "Algo más ligero para ver ahora",
+                            movieSource, () -> tmdb.moviesByGenre(35, 1), 8));
+                }
+
+                List<HomeShelf> discovery = shelfFutures.stream()
+                        .map(CompletableFuture::join)
+                        .filter(shelf -> !shelf.items().isEmpty())
+                        .toList();
+
+                return new HomeData(
+                        history.stream().limit(10).toList(),
+                        moviesFuture.join(),
+                        seriesFuture.join(),
+                        liveFuture.join(),
+                        discovery
+                );
             }
 
             @Override protected void done() {
@@ -384,6 +418,11 @@ final class MainFrame extends JFrame {
 
         if (!data.series().isEmpty()) {
             homeRoot.add(homeSection("Series populares", "Historias para seguir viendo", data.series()));
+            homeRoot.add(Box.createVerticalStrut(30));
+        }
+
+        for (HomeShelf shelf : data.discovery()) {
+            homeRoot.add(homeSection(shelf.title(), shelf.subtitle(), shelf.items()));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
@@ -441,16 +480,26 @@ final class MainFrame extends JFrame {
         scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.getHorizontalScrollBar().setUnitIncrement(34);
+        scroll.setWheelScrollingEnabled(false);
         scroll.addMouseWheelListener(e -> {
-            JScrollBar bar = scroll.getHorizontalScrollBar();
-            int delta = e.getWheelRotation() * 90;
-            bar.setValue(Math.max(bar.getMinimum(),
-                    Math.min(bar.getMaximum() - bar.getVisibleAmount(), bar.getValue() + delta)));
+            if (e.isShiftDown()) {
+                scrollBarBy(scroll.getHorizontalScrollBar(), e.getPreciseWheelRotation(), 84);
+            } else {
+                scrollBarBy(homeScroll.getVerticalScrollBar(), e.getPreciseWheelRotation(), 58);
+            }
             e.consume();
         });
         scroll.setPreferredSize(new Dimension(800, 198));
         section.add(scroll, BorderLayout.CENTER);
         return section;
+    }
+
+    private static void scrollBarBy(JScrollBar bar, double preciseRotation, int pixelsPerNotch) {
+        if (bar == null || !Double.isFinite(preciseRotation) || preciseRotation == 0.0) return;
+        int delta = (int) Math.round(preciseRotation * pixelsPerNotch);
+        int min = bar.getMinimum();
+        int max = Math.max(min, bar.getMaximum() - bar.getVisibleAmount());
+        bar.setValue(Math.max(min, Math.min(max, bar.getValue() + delta)));
     }
 
     private void renderHomeError(Throwable error) {
@@ -582,7 +631,7 @@ final class MainFrame extends JFrame {
 
     private void renderTmdbSetup() {
         renderGridState("Activa TMDb",
-                "TMDb es el catálogo principal de películas y series. Su API de desarrollador es gratuita para uso no comercial. Configura tu API key o Read Access Token una sola vez.",
+                "La build pública no incluye una credencial compartida de TMDb. Cada usuario configura una API key o Read Access Token propio una sola vez; para uso no comercial, TMDb ofrece acceso de desarrollador gratuito.",
                 "Configurar TMDb", this::openSettings);
     }
 
@@ -811,11 +860,26 @@ final class MainFrame extends JFrame {
         }
     }
 
+    private static CompletableFuture<List<Models.ShowItem>> loadAsync(
+            Provider source, Loader loader, int limit) {
+        return CompletableFuture.supplyAsync(() ->
+                withSource(source, safeLoad(loader, limit)));
+    }
+
+    private static CompletableFuture<HomeShelf> loadShelfAsync(
+            String title, String subtitle, Provider source, Loader loader, int limit) {
+        return loadAsync(source, loader, limit)
+                .thenApply(items -> new HomeShelf(title, subtitle, items));
+    }
+
+    private record HomeShelf(String title, String subtitle, List<Models.ShowItem> items) {}
+
     private record HomeData(
             List<Models.ShowItem> history,
             List<Models.ShowItem> movies,
             List<Models.ShowItem> series,
-            List<Models.ShowItem> live
+            List<Models.ShowItem> live,
+            List<HomeShelf> discovery
     ) {}
 
     private static String escapeHtml(String value) {

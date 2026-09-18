@@ -25,6 +25,17 @@ final class TmdbProvider implements Provider {
         return listing("discover/tv", page, "tv");
     }
 
+    List<Models.ShowItem> moviesByGenre(int genreId, int page) throws Exception {
+        checkPage(page);
+        if (genreId <= 0) throw new IllegalArgumentException("TMDb: Invalid genre.");
+        return mapListing(client.get("discover/movie", Map.of(
+                "page", Integer.toString(page),
+                "include_adult", "false",
+                "sort_by", "popularity.desc",
+                "with_genres", Integer.toString(genreId)
+        )), "movie");
+    }
+
     private List<Models.ShowItem> listing(String path, int page, String mediaType) throws Exception {
         checkPage(page);
         return mapListing(client.get(path, Map.of("page", Integer.toString(page),

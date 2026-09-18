@@ -51,7 +51,12 @@ final class MpvPlayer {
 
     static void playEmbedded(Models.Video video, String title, long requestId,
                              long windowId, String ipcPath) throws Exception {
-        PLAYER.startEmbedded(video, title, requestId, windowId, ipcPath);
+        PLAYER.startEmbedded(video, title, requestId, windowId, ipcPath, null);
+    }
+
+    static void playEmbedded(Models.Video video, String title, long requestId,
+                             long windowId, String ipcPath, String hlsBitrateOverride) throws Exception {
+        PLAYER.startEmbedded(video, title, requestId, windowId, ipcPath, hlsBitrateOverride);
     }
 
     static void stopCurrent() { PLAYER.stop(); }
@@ -77,14 +82,14 @@ final class MpvPlayer {
     }
 
     synchronized void startEmbedded(Models.Video video, String title, long requestId,
-                                    long windowId, String ipcPath) throws Exception {
+                                    long windowId, String ipcPath, String hlsBitrateOverride) throws Exception {
         if (windowId == 0L) throw new IllegalArgumentException("Ventana de video no disponible.");
         if (ipcPath == null || ipcPath.isBlank()) throw new IllegalArgumentException("Canal IPC no disponible.");
         // IPC connection is the real startup proof for the embedded player. A long
         // process-survival guard here only adds latency before we can even connect.
         long embeddedGuardMillis = Math.min(startupMillis, 300L);
         startCommand(video, requestId,
-                embeddedPlaybackCommand(executable.get(), video, title, windowId, ipcPath),
+                embeddedPlaybackCommand(executable.get(), video, title, windowId, ipcPath, hlsBitrateOverride),
                 embeddedGuardMillis);
     }
 
@@ -174,7 +179,13 @@ final class MpvPlayer {
 
     static List<String> embeddedPlaybackCommand(String mpv, Models.Video video, String title,
                                                 long windowId, String ipcPath) {
-        ArrayList<String> cmd = basePlaybackCommand(mpv, video, title);
+        return embeddedPlaybackCommand(mpv, video, title, windowId, ipcPath, null);
+    }
+
+    static List<String> embeddedPlaybackCommand(String mpv, Models.Video video, String title,
+                                                long windowId, String ipcPath,
+                                                String hlsBitrateOverride) {
+        ArrayList<String> cmd = basePlaybackCommand(mpv, video, title, hlsBitrateOverride);
         cmd.add("--wid=" + Long.toUnsignedString(windowId));
         cmd.add("--force-window=yes");
         cmd.add("--keep-open=yes");
@@ -188,12 +199,25 @@ final class MpvPlayer {
     }
 
     private static ArrayList<String> basePlaybackCommand(String mpv, Models.Video video, String title) {
+        return basePlaybackCommand(mpv, video, title, null);
+    }
+
+    private static ArrayList<String> basePlaybackCommand(String mpv, Models.Video video, String title,
+                                                          String hlsBitrateOverride) {
         ArrayList<String> cmd = new ArrayList<>();
         cmd.add(mpv);
         cmd.add("--hwdec=auto-safe");
         cmd.add("--network-timeout=20");
+        cmd.add("--cache=yes");
         cmd.add("--cache-pause=yes");
         cmd.add("--cache-pause-wait=2");
+        cmd.add("--cache-secs=45");
+        cmd.add("--demuxer-max-bytes=96MiB");
+        cmd.add("--stream-buffer-size=1MiB");
+        String hlsBitrate = hlsBitrateOverride == null || hlsBitrateOverride.isBlank()
+                ? PlaybackSettings.hlsBitrateArgument()
+                : hlsBitrateOverride;
+        cmd.add("--hls-bitrate=" + hlsBitrate);
         cmd.add("--force-media-title=" + safe(title));
         cmd.add("--audio-client-name=Streamflix");
         String audioPreference = PlaybackSettings.audioLanguage();

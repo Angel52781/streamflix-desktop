@@ -29,11 +29,23 @@ final class PlaybackSettings {
         return language(read().get("subtitleLanguage"), "es", false);
     }
 
-    static void save(boolean startMaximized, String audioLanguage, String subtitleLanguage) {
+    static String qualityProfile() {
+        return quality(read().get("qualityProfile"));
+    }
+
+    static void save(boolean startMaximized, String audioLanguage,
+                     String subtitleLanguage, String qualityProfile) {
         Map<String, Object> settings = new LinkedHashMap<>(read());
         settings.put("startMaximized", startMaximized);
         settings.put("audioLanguage", language(audioLanguage, "auto", true));
         settings.put("subtitleLanguage", language(subtitleLanguage, "es", false));
+        settings.put("qualityProfile", quality(qualityProfile));
+        write(settings);
+    }
+
+    static void saveQualityProfile(String qualityProfile) {
+        Map<String, Object> settings = new LinkedHashMap<>(read());
+        settings.put("qualityProfile", quality(qualityProfile));
         write(settings);
     }
 
@@ -50,6 +62,40 @@ final class PlaybackSettings {
             case "en" -> "en,eng,es,spa,es-ES,es-419";
             case "off" -> "";
             default -> "es,spa,es-ES,es-419,en,eng";
+        };
+    }
+
+    static String hlsBitrateArgument() {
+        return hlsBitrateArgument(qualityProfile());
+    }
+
+    static String hlsBitrateArgument(String profile) {
+        return switch (quality(profile)) {
+            // Auto deliberately avoids mpv's "max" default. If playback stalls,
+            // EmbeddedPlayerWindow can temporarily lower this cap further.
+            case "saver" -> "1500000";
+            case "balanced" -> "3000000";
+            case "high" -> "6000000";
+            case "max" -> "max";
+            default -> "4000000";
+        };
+    }
+
+    static String qualityLabel(String profile) {
+        return switch (quality(profile)) {
+            case "saver" -> "Ahorro";
+            case "balanced" -> "Equilibrada";
+            case "high" -> "Alta";
+            case "max" -> "Máxima";
+            default -> "Auto";
+        };
+    }
+
+    private static String quality(Object raw) {
+        String value = raw instanceof String text ? text.strip().toLowerCase() : "";
+        return switch (value) {
+            case "saver", "balanced", "high", "max" -> value;
+            default -> "auto";
         };
     }
 

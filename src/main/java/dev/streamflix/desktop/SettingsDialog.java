@@ -21,6 +21,8 @@ final class SettingsDialog extends JDialog {
             new String[]{"Automático", "Español", "English"});
     private final JComboBox<String> subtitleLanguage = new JComboBox<>(
             new String[]{"Español", "English", "Desactivados"});
+    private final JComboBox<String> qualityProfile = new JComboBox<>(
+            new String[]{"Automática", "Ahorro de datos", "Equilibrada", "Alta", "Máxima"});
 
     SettingsDialog(Window owner) {
         super(owner, "Configuración · Streamflix", ModalityType.APPLICATION_MODAL);
@@ -156,7 +158,8 @@ final class SettingsDialog extends JDialog {
         JLabel explanation = Theme.muted(
                 "<html><body style='width:640px'>"
                 + "TMDb es el catálogo principal de metadata: títulos, pósters, temporadas y episodios. "
-                + "No es el servidor de video. La misma API key v3 o Read Access Token funciona para español e inglés."
+                + "No es el servidor de video. En esta build pública cada usuario aporta su propia credencial; "
+                + "la misma API key v3 o Read Access Token funciona para español e inglés."
                 + "</body></html>");
         tmdb.add(explanation, c);
 
@@ -304,12 +307,24 @@ final class SettingsDialog extends JDialog {
 
         JLabel behavior = Theme.muted(
                 "<html><body style='width:640px'>"
-                + "Automático prueba servidores hasta que uno inicia realmente. "
-                + "La interfaz de Streamflix controla pausa, salto temporal, volumen, pista de audio y subtítulos."
+                + "Automático prioriza fuentes que históricamente arrancaron mejor en este equipo. "
+                + "La calidad Automática evita forzar siempre el bitrate máximo y reduce la calidad si la red se queda corta."
                 + "</body></html>");
         behavior.setAlignmentX(Component.LEFT_ALIGNMENT);
         player.add(behavior);
         player.add(Box.createVerticalStrut(18));
+
+        JLabel qualityLabel = new JLabel("Calidad de reproducción");
+        qualityLabel.setForeground(Theme.TEXT);
+        qualityLabel.setFont(Theme.FONT_BOLD.deriveFont(13f));
+        qualityLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        player.add(qualityLabel);
+        player.add(Box.createVerticalStrut(7));
+        qualityProfile.setMaximumSize(new Dimension(240, 38));
+        qualityProfile.setAlignmentX(Component.LEFT_ALIGNMENT);
+        qualityProfile.setToolTipText("Automática equilibra arranque, estabilidad y calidad.");
+        player.add(qualityProfile);
+        player.add(Box.createVerticalStrut(16));
 
         JLabel audioLabel = new JLabel("Idioma de audio preferido");
         audioLabel.setForeground(Theme.TEXT);
@@ -426,6 +441,14 @@ final class SettingsDialog extends JDialog {
                 + "</body></html>");
         description.setAlignmentX(Component.LEFT_ALIGNMENT);
         about.add(description);
+        about.add(Box.createVerticalStrut(14));
+
+        JLabel tmdbAttribution = Theme.muted(
+                "<html><body style='width:640px'>"
+                + "This product uses the TMDB API but is not endorsed or certified by TMDB."
+                + "</body></html>");
+        tmdbAttribution.setAlignmentX(Component.LEFT_ALIGNMENT);
+        about.add(tmdbAttribution);
         about.add(Box.createVerticalStrut(18));
 
         JButton github = Theme.button("Abrir repositorio en GitHub");
@@ -451,6 +474,13 @@ final class SettingsDialog extends JDialog {
         subtitleLanguage.setSelectedIndex(switch (PlaybackSettings.subtitleLanguage()) {
             case "en" -> 1;
             case "off" -> 2;
+            default -> 0;
+        });
+        qualityProfile.setSelectedIndex(switch (PlaybackSettings.qualityProfile()) {
+            case "saver" -> 1;
+            case "balanced" -> 2;
+            case "high" -> 3;
+            case "max" -> 4;
             default -> 0;
         });
 
@@ -529,6 +559,13 @@ final class SettingsDialog extends JDialog {
                         case 1 -> "en";
                         case 2 -> "off";
                         default -> "es";
+                    },
+                    switch (qualityProfile.getSelectedIndex()) {
+                        case 1 -> "saver";
+                        case 2 -> "balanced";
+                        case 3 -> "high";
+                        case 4 -> "max";
+                        default -> "auto";
                     }
             );
             status.setForeground(new Color(104, 211, 145));

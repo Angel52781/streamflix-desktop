@@ -13,6 +13,7 @@ public final class TmdbFixtureTest {
         testMissingKeyFailsBeforeTransport();
         testAuthenticationModes();
         testMovieAndSearchMapping();
+        testGenreListing();
         testEpisodesAcrossSeasons();
         testSpanishIdentity();
         testPlaybackServers();
@@ -45,12 +46,13 @@ public final class TmdbFixtureTest {
             String raw = Files.readString(dataDir.resolve("settings.json"));
             require(raw.contains("\"tmdbApiKey\""), "settings field persisted");
 
-            PlaybackSettings.save(false, "en", "off");
+            PlaybackSettings.save(false, "en", "off", "balanced");
             require("0123456789abcdef0123456789abcdef".equals(TmdbSettings.localApiKey()),
                     "playback settings preserve TMDb credential");
             require(!PlaybackSettings.startMaximized(), "window preference persisted");
             require("en".equals(PlaybackSettings.audioLanguage()), "audio preference persisted");
             require("off".equals(PlaybackSettings.subtitleLanguage()), "subtitle preference persisted");
+            require("balanced".equals(PlaybackSettings.qualityProfile()), "quality preference persisted");
 
             TmdbSettings.saveApiKey("");
             require(TmdbSettings.localApiKey().isBlank(), "empty key removes local setting");
@@ -127,6 +129,19 @@ public final class TmdbFixtureTest {
         require(search.size() == 2, "multi search filters people");
         require(search.get(0).type() == Models.ShowType.MOVIE, "search movie type");
         require(search.get(1).type() == Models.ShowType.TV_SHOW, "search tv type");
+    }
+
+    private static void testGenreListing() throws Exception {
+        TmdbClient client = client("es", url -> {
+            require(url.contains("with_genres=27"), "genre query forwarded");
+            return """
+                    {"results":[{"id":99,"title":"Terror demo","release_date":"2026-10-31","vote_average":7.1,"poster_path":"/terror.jpg"}]}
+                    """;
+        });
+        TmdbProvider provider = new TmdbProvider(client);
+        List<Models.ShowItem> horror = provider.moviesByGenre(27, 1);
+        require(horror.size() == 1, "genre listing count");
+        require("tmdb:movie:99".equals(horror.get(0).id()), "genre listing stable id");
     }
 
     private static void testEpisodesAcrossSeasons() throws Exception {

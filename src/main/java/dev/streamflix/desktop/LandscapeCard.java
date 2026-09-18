@@ -37,13 +37,12 @@ final class LandscapeCard extends JLayeredPane {
             } else {
                 hoverAmount += Math.signum(delta) * Math.min(Math.abs(delta), 0.16f);
             }
-            revalidate();
             repaintAll();
         });
         hoverTimer.setCoalesce(true);
 
         String image = item.banner() != null && !item.banner().isBlank()
-                ? item.banner() : item.poster();
+                ? cardArtworkUrl(item.banner()) : cardArtworkUrl(item.poster());
         artwork = new ArtworkPanel(image);
         artwork.setFallbackText(item.title());
         add(artwork, Integer.valueOf(0));
@@ -56,14 +55,20 @@ final class LandscapeCard extends JLayeredPane {
                     int h = getHeight();
                     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
+                    int overlayAlpha = 188 + Math.round(47f * hoverAmount);
                     GradientPaint gradient = new GradientPaint(
                             0, Math.max(0, h / 3), new Color(0, 0, 0, 0),
-                            0, h, new Color(0, 0, 0, hovered || focused ? 235 : 188));
+                            0, h, new Color(0, 0, 0, overlayAlpha));
                     g2.setPaint(gradient);
                     g2.fillRoundRect(0, 0, w, h, 12, 12);
 
-                    if (hovered || focused) {
-                        g2.setColor(focused ? Theme.ACCENT : new Color(255, 255, 255, 55));
+                    if (hoverAmount > 0.02f) {
+                        if (focused) {
+                            g2.setColor(Theme.ACCENT);
+                        } else {
+                            g2.setColor(new Color(255, 255, 255,
+                                    Math.max(1, Math.round(55f * hoverAmount))));
+                        }
                         g2.drawRoundRect(0, 0, w - 1, h - 1, 12, 12);
                     }
 
@@ -173,11 +178,13 @@ final class LandscapeCard extends JLayeredPane {
     }
 
     @Override public void doLayout() {
-        int w = getWidth();
-        int h = getHeight();
-        int zoom = Math.round(7f * hoverAmount);
-        artwork.setBounds(-zoom, -zoom, w + zoom * 2, h + zoom * 2);
-        overlay.setBounds(0, 0, w, h);
+        artwork.setBounds(0, 0, getWidth(), getHeight());
+        overlay.setBounds(0, 0, getWidth(), getHeight());
+    }
+
+    private static String cardArtworkUrl(String url) {
+        if (url == null || url.isBlank()) return url;
+        return url.replace("/t/p/w1280/", "/t/p/w780/");
     }
 
     private void animateHover(float target) {
@@ -186,7 +193,6 @@ final class LandscapeCard extends JLayeredPane {
     }
 
     private void repaintAll() {
-        repaint();
         overlay.repaint();
     }
 }

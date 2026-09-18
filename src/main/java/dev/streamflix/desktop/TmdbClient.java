@@ -45,7 +45,7 @@ final class TmdbClient {
         if (v3ApiKey) url.append("api_key=").append(Http.encode(credential)).append('&');
         url.append("language=").append(language);
         parameters.forEach((name, value) -> {
-            if (!List.of("page", "query", "include_adult", "sort_by").contains(name)) {
+            if (!List.of("page", "query", "include_adult", "sort_by", "with_genres").contains(name)) {
                 throw new IllegalArgumentException("TMDb: Invalid metadata parameter.");
             }
             url.append('&').append(name).append('=').append(Http.encode(value));

@@ -334,9 +334,13 @@ final class TitleDetailView extends JPanel {
         seasonScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
         seasonScroll.getHorizontalScrollBar().setUnitIncrement(24);
         seasonScroll.setPreferredSize(new Dimension(800, 48));
+        seasonScroll.setWheelScrollingEnabled(false);
         seasonScroll.addMouseWheelListener(e -> {
+            if (!e.isShiftDown()) return;
             JScrollBar bar = seasonScroll.getHorizontalScrollBar();
-            bar.setValue(bar.getValue() + e.getWheelRotation() * 80);
+            int delta = (int) Math.round(e.getPreciseWheelRotation() * 72);
+            int max = Math.max(bar.getMinimum(), bar.getMaximum() - bar.getVisibleAmount());
+            bar.setValue(Math.max(bar.getMinimum(), Math.min(max, bar.getValue() + delta)));
             e.consume();
         });
         seasonScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -496,15 +500,19 @@ final class TitleDetailView extends JPanel {
         new SwingWorker<Models.Server, Void>() {
             @Override protected Models.Server doInBackground() throws Exception {
                 Exception last = null;
-                for (Models.Server server : servers) {
+                for (Models.Server server : PlaybackServerStats.rank(servers)) {
                     if (!player.isDisplayable()) throw new CancellationException("Reproductor cerrado.");
                     player.setPreparing("Probando " + server.name() + "…");
+                    long startedAt = System.nanoTime();
                     try {
                         Models.Video video = extractors.resolve(server);
                         if (video == null || video.source() == null || video.source().isBlank()) {
                             throw new IllegalStateException("La fuente no devolvió un video reproducible.");
                         }
                         player.start(video, server.name(), playbackRequest, resumeAtSeconds);
+                        PlaybackServerStats.recordSuccess(server, elapsedMillis(startedAt));
+                        player.setPlaybackIssueListener(() ->
+                                PlaybackServerStats.recordFailure(server, 1));
                         return server;
                     } catch (InterruptedException ex) {
                         Thread.currentThread().interrupt();
@@ -512,6 +520,7 @@ final class TitleDetailView extends JPanel {
                     } catch (CancellationException ex) {
                         throw ex;
                     } catch (Exception ex) {
+                        PlaybackServerStats.recordFailure(server, elapsedMillis(startedAt));
                         last = ex;
                     }
                 }
@@ -544,12 +553,21 @@ final class TitleDetailView extends JPanel {
 
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() throws Exception {
-                Models.Video video = extractors.resolve(server);
-                if (video == null || video.source() == null || video.source().isBlank()) {
-                    throw new IllegalStateException("La fuente no devolvió un video reproducible.");
+                long startedAt = System.nanoTime();
+                try {
+                    Models.Video video = extractors.resolve(server);
+                    if (video == null || video.source() == null || video.source().isBlank()) {
+                        throw new IllegalStateException("La fuente no devolvió un video reproducible.");
+                    }
+                    player.start(video, server.name(), playbackRequest, resumeAtSeconds);
+                    PlaybackServerStats.recordSuccess(server, elapsedMillis(startedAt));
+                    player.setPlaybackIssueListener(() ->
+                            PlaybackServerStats.recordFailure(server, 1));
+                    return null;
+                } catch (Exception ex) {
+                    PlaybackServerStats.recordFailure(server, elapsedMillis(startedAt));
+                    throw ex;
                 }
-                player.start(video, server.name(), playbackRequest, resumeAtSeconds);
-                return null;
             }
 
             @Override protected void done() {
@@ -619,6 +637,11 @@ final class TitleDetailView extends JPanel {
                 + (ex.getMessage() == null ? ex.toString() : ex.getMessage()));
         label.setForeground(Theme.DANGER);
         return label;
+    }
+
+    private static long elapsedMillis(long startedAtNanos) {
+        return Math.max(1L, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - startedAtNanos));
     }
 
     private static String formatTime(double rawSeconds) {
