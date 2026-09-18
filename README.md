@@ -14,7 +14,7 @@ You can also browse versioned releases and checksums on the [GitHub Releases pag
 
 Version: **1.2.0**
 
-The `main` branch is currently preparing **1.3.3**, focused on streaming-style rail navigation, catalog filters and TMDb onboarding.
+The `main` branch is currently preparing **1.3.4**, focused on smoother streaming-style rail navigation, clearer catalog filters and TMDb onboarding.
 
 ### Core experience
 
@@ -22,7 +22,7 @@ The `main` branch is currently preparing **1.3.3**, focused on streaming-style r
 - Cinematic desktop navigation with Home, Movies, Series, Live TV and Mi lista
 - Home discovery rails for Horror, Thriller, Drama and Comedy
 - Streaming-style rail navigation with visible previous/next controls and contextual horizontal wheel zones
-- "Ver más" actions route Home shelves into filtered Movie/Series catalogs
+- "Ver mÃ¡s" actions route Home shelves into filtered Movie/Series catalogs
 - Movie and Series catalog filters for popular content and genres
 - Unified TMDb catalog with **English (en-US)** or **Spanish (es-ES)** selected from Settings
 - TMDb API key or Read Access Token configured locally from Settings
@@ -45,7 +45,7 @@ The `main` branch is currently preparing **1.3.3**, focused on streaming-style r
 - Local server ranking learns which hosts start faster and fail less on this machine
 - Manual server selection
 - Playback headers forwarded to mpv
-- Pause/resume, seek ±10 s, timeline, volume, audio-track and subtitle selection
+- Pause/resume, seek Â±10 s, timeline, volume, audio-track and subtitle selection
 - Stable windowed player chrome; controls auto-hide only in fullscreen
 - Configurable quality: Automatic, Data Saver, Balanced, High and Maximum
 - Automatic HLS quality starts below mpv's maximum-bitrate default and can downgrade after sustained buffering
@@ -83,7 +83,7 @@ Third-party providers can change or disappear without notice. A provider is not 
 Streamflix accepts either:
 
 1. STREAMFLIX_TMDB_API_KEY
-2. %APPDATA%\\Streamflix\\settings.json → tmdbApiKey
+2. %APPDATA%\\Streamflix\\settings.json â†’ tmdbApiKey
 
 The environment variable has precedence.
 
