@@ -12,7 +12,7 @@ public final class MpvBootstrapTest {
             check(MpvBootstrap.runtimeDir().equals(root.toAbsolutePath().normalize()), "runtime override");
             check(!MpvBootstrap.managedRuntimeReady(), "empty runtime not ready");
 
-            Files.write(root.resolve("mpv.exe"), new byte[] {1});
+            Files.write(MpvBootstrap.executablePath(), new byte[] {1});
             Files.writeString(root.resolve("VERSION"), MpvBootstrap.BUILD_ID);
             check(MpvBootstrap.managedRuntimeReady(), "matching runtime ready");
 
