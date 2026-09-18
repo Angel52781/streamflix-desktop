@@ -437,12 +437,17 @@ final class MainFrame extends JFrame {
     private void renderHome(HomeData data) {
         homeRoot.removeAll();
 
-        Models.ShowItem hero = !data.series().isEmpty()
-                ? data.series().get(0)
-                : !data.movies().isEmpty() ? data.movies().get(0) : null;
+        Models.ShowItem hero = java.util.stream.Stream.concat(
+                        data.movies().stream(), data.series().stream())
+                .filter(item -> item.banner() != null && !item.banner().isBlank())
+                .max(java.util.Comparator.comparingDouble(
+                        item -> item.rating() == null ? 0.0 : item.rating()))
+                .orElseGet(() -> !data.series().isEmpty()
+                        ? data.series().get(0)
+                        : !data.movies().isEmpty() ? data.movies().get(0) : null);
         if (hero != null) {
             homeRoot.add(new HeroPanel(hero, this::openDetails));
-            homeRoot.add(Box.createVerticalStrut(28));
+            homeRoot.add(Box.createVerticalStrut(10));
         }
 
         if (!data.history().isEmpty()) {
@@ -511,9 +516,16 @@ final class MainFrame extends JFrame {
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
-        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        scroll.getHorizontalScrollBar().setUnitIncrement(28);
-        scroll.setPreferredSize(new Dimension(800, 210));
+        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.getHorizontalScrollBar().setUnitIncrement(34);
+        scroll.addMouseWheelListener(e -> {
+            JScrollBar bar = scroll.getHorizontalScrollBar();
+            int delta = e.getWheelRotation() * 90;
+            bar.setValue(Math.max(bar.getMinimum(),
+                    Math.min(bar.getMaximum() - bar.getVisibleAmount(), bar.getValue() + delta)));
+            e.consume();
+        });
+        scroll.setPreferredSize(new Dimension(800, 198));
         section.add(scroll, BorderLayout.CENTER);
         return section;
     }

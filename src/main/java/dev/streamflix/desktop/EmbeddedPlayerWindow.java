@@ -28,7 +28,7 @@ final class EmbeddedPlayerWindow extends JDialog {
     private final JPanel mediaStage = new JPanel(new CardLayout());
     private final JPanel chromeTop = new JPanel(new BorderLayout(18, 0));
     private final JPanel chromeBottom = new JPanel();
-    private final JLabel loadingTitle = Theme.heading("Preparando reproducción", 22f);
+    private final JLabel loadingTitle = Theme.heading("STREAMFLIX", 24f);
     private final JLabel loadingDetail = Theme.muted("Buscando un servidor compatible…");
     private final JProgressBar loadingProgress = new JProgressBar();
 
@@ -44,15 +44,16 @@ final class EmbeddedPlayerWindow extends JDialog {
 
     private final JSlider timeline = new JSlider(0, 1000, 0);
     private final JSlider volume = new JSlider(0, 100, 80);
-    private final JComboBox<TrackOption> subtitleBox = new JComboBox<>();
-    private final JComboBox<TrackOption> audioBox = new JComboBox<>();
+    private final JButton audioButton = Theme.button("Audio");
+    private final JButton subtitleButton = Theme.button("Subtítulos");
+    private final JPopupMenu audioMenu = new JPopupMenu();
+    private final JPopupMenu subtitleMenu = new JPopupMenu();
 
     private final Timer refreshTimer;
     private final Timer chromeHideTimer;
     private final AtomicBoolean refreshInFlight = new AtomicBoolean();
     private volatile MpvIpcClient ipc;
     private volatile boolean closing;
-    private volatile boolean updatingTracks;
     private volatile double durationSeconds;
     private boolean fullScreen;
 
@@ -270,26 +271,17 @@ final class EmbeddedPlayerWindow extends JDialog {
         JPanel tracks = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         tracks.setOpaque(false);
 
-        subtitleBox.setPreferredSize(new Dimension(210, 34));
-        subtitleBox.setToolTipText("Seleccionar subtítulos");
-        audioBox.setPreferredSize(new Dimension(180, 34));
-        audioBox.setToolTipText("Seleccionar pista de audio");
+        audioButton.setToolTipText("Seleccionar pista de audio");
+        subtitleButton.setToolTipText("Seleccionar subtítulos");
+        audioButton.setEnabled(false);
+        subtitleButton.setEnabled(false);
 
-        tracks.add(Theme.muted("Audio"));
-        tracks.add(audioBox);
-        tracks.add(Theme.muted("Subtítulos"));
-        tracks.add(subtitleBox);
+        tracks.add(audioButton);
+        tracks.add(subtitleButton);
         tracks.add(fullscreen);
         actions.add(tracks, BorderLayout.EAST);
 
         chromeBottom.add(actions);
-        chromeBottom.add(Box.createVerticalStrut(7));
-
-        JPanel state = new JPanel(new BorderLayout());
-        state.setOpaque(false);
-        status.setFont(Theme.FONT.deriveFont(11.5f));
-        state.add(status, BorderLayout.WEST);
-        chromeBottom.add(state);
 
         root.add(chromeBottom, BorderLayout.SOUTH);
         return root;
@@ -303,6 +295,7 @@ final class EmbeddedPlayerWindow extends JDialog {
         box.setOpaque(false);
         box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
 
+        loadingTitle.setForeground(Theme.ACCENT);
         loadingTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
         loadingDetail.setAlignmentX(Component.CENTER_ALIGNMENT);
         loadingDetail.setFont(Theme.FONT.deriveFont(13f));
@@ -335,19 +328,8 @@ final class EmbeddedPlayerWindow extends JDialog {
             }
         });
 
-        subtitleBox.addActionListener(e -> {
-            if (updatingTracks) return;
-            TrackOption selected = (TrackOption) subtitleBox.getSelectedItem();
-            if (selected == null) return;
-            runCommand(() -> requireIpc().setProperty("sid", selected.id() == 0 ? "no" : selected.id()));
-        });
-
-        audioBox.addActionListener(e -> {
-            if (updatingTracks) return;
-            TrackOption selected = (TrackOption) audioBox.getSelectedItem();
-            if (selected == null || selected.id() == 0) return;
-            runCommand(() -> requireIpc().setProperty("aid", selected.id()));
-        });
+        audioButton.addActionListener(e -> showTrackMenu(audioButton, audioMenu));
+        subtitleButton.addActionListener(e -> showTrackMenu(subtitleButton, subtitleMenu));
     }
 
     private void timelineChanged(ChangeEvent e) {
@@ -484,32 +466,67 @@ final class EmbeddedPlayerWindow extends JDialog {
             @Override protected void done() {
                 try {
                     Tracks tracks = get();
-                    updatingTracks = true;
-                    try {
-                        fillTracks(audioBox, tracks.audio(), false);
-                        fillTracks(subtitleBox, tracks.subtitles(), true);
-                    } finally {
-                        updatingTracks = false;
-                    }
+                    populateTrackMenu(audioButton, audioMenu, tracks.audio(), false, "aid");
+                    populateTrackMenu(subtitleButton, subtitleMenu, tracks.subtitles(), true, "sid");
                 } catch (Exception ignored) {}
             }
         }.execute();
     }
 
-    private static void fillTracks(JComboBox<TrackOption> box, List<TrackOption> tracks, boolean allowOff) {
-        DefaultComboBoxModel<TrackOption> model = new DefaultComboBoxModel<>();
+    private void populateTrackMenu(JButton button, JPopupMenu menu, List<TrackOption> tracks,
+                                   boolean allowOff, String property) {
+        menu.removeAll();
+        ButtonGroup group = new ButtonGroup();
         TrackOption selected = null;
 
         for (TrackOption track : tracks) {
-            model.addElement(track);
+            JRadioButtonMenuItem item = new JRadioButtonMenuItem(track.label());
+            item.setFont(Theme.FONT.deriveFont(12.5f));
+            item.setForeground(Theme.TEXT);
+            item.setBackground(Theme.PANEL);
+            item.setSelected(track.selected());
+            item.addActionListener(e -> {
+                button.setText(track.id() == 0
+                        ? (allowOff ? "Subtítulos" : "Audio")
+                        : (allowOff ? "Subtítulos · " : "Audio · ") + shortTrackLabel(track.label()));
+                runCommand(() -> requireIpc().setProperty(property,
+                        allowOff && track.id() == 0 ? "no" : track.id()));
+            });
+            group.add(item);
+            menu.add(item);
             if (track.selected()) selected = track;
         }
 
-        box.setModel(model);
-        if (selected != null) box.setSelectedItem(selected);
-        else if (allowOff && model.getSize() > 0) box.setSelectedIndex(0);
+        if (allowOff && selected == null && !tracks.isEmpty()) {
+            ((JRadioButtonMenuItem) menu.getComponent(0)).setSelected(true);
+        }
 
-        box.setEnabled(model.getSize() > (allowOff ? 1 : 0));
+        menu.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Theme.BORDER),
+                BorderFactory.createEmptyBorder(6, 6, 6, 6)));
+        menu.setBackground(Theme.PANEL);
+
+        int meaningful = tracks.size() - (allowOff ? 1 : 0);
+        button.setEnabled(meaningful > 0);
+        if (selected != null && selected.id() != 0) {
+            button.setText((allowOff ? "Subtítulos · " : "Audio · ") + shortTrackLabel(selected.label()));
+        } else {
+            button.setText(allowOff ? "Subtítulos" : "Audio");
+        }
+    }
+
+    private static String shortTrackLabel(String label) {
+        if (label == null || label.isBlank()) return "";
+        String value = label.strip();
+        return value.length() <= 14 ? value : value.substring(0, 13).strip() + "…";
+    }
+
+    private static void showTrackMenu(JButton button, JPopupMenu menu) {
+        if (!button.isEnabled() || menu.getComponentCount() == 0) return;
+        Dimension preferred = menu.getPreferredSize();
+        int x = Math.max(0, button.getWidth() - preferred.width);
+        int y = -preferred.height - 6;
+        menu.show(button, x, y);
     }
 
     private long windowHandle() throws Exception {

@@ -95,10 +95,10 @@ final class Theme {
     }
 
     static JButton topNavButton(String text) {
-        FlatButton b = new FlatButton(text, false, false);
+        FlatButton b = new FlatButton(text, false, false, true);
         b.setHorizontalAlignment(SwingConstants.CENTER);
-        b.setPreferredSize(new Dimension(Math.max(76, text.length() * 9 + 24), 36));
-        b.setMaximumSize(new Dimension(150, 36));
+        b.setPreferredSize(new Dimension(Math.max(70, text.length() * 8 + 22), 34));
+        b.setMaximumSize(new Dimension(145, 34));
         return b;
     }
 
@@ -143,13 +143,19 @@ final class Theme {
     private static final class FlatButton extends JButton {
         private final boolean primary;
         private final boolean navigation;
+        private final boolean topNavigation;
         private boolean hovered;
         private boolean selectedState;
 
         FlatButton(String text, boolean primary, boolean navigation) {
+            this(text, primary, navigation, false);
+        }
+
+        FlatButton(String text, boolean primary, boolean navigation, boolean topNavigation) {
             super(text);
             this.primary = primary;
             this.navigation = navigation;
+            this.topNavigation = topNavigation;
             setFont(FONT_BOLD);
             setForeground(TEXT);
             setFocusPainted(false);
@@ -157,8 +163,11 @@ final class Theme {
             setContentAreaFilled(false);
             setOpaque(false);
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            setBorder(new EmptyBorder(navigation ? 11 : 9, navigation ? 13 : 15,
-                    navigation ? 11 : 9, navigation ? 13 : 15));
+            setBorder(new EmptyBorder(
+                    topNavigation ? 8 : navigation ? 11 : 9,
+                    topNavigation ? 10 : navigation ? 13 : 15,
+                    topNavigation ? 8 : navigation ? 11 : 9,
+                    topNavigation ? 10 : navigation ? 13 : 15));
             addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override public void mouseEntered(java.awt.event.MouseEvent e) {
                     hovered = true;
@@ -185,26 +194,28 @@ final class Theme {
                     bg = new Color(PANEL_ALT.getRed(), PANEL_ALT.getGreen(), PANEL_ALT.getBlue(), 110);
                 } else if (primary) {
                     bg = hovered ? ACCENT_HOVER : ACCENT;
-                } else if (selectedState) {
+                } else if (selectedState && navigation) {
                     bg = PANEL_ALT;
                 } else if (hovered) {
-                    bg = HOVER;
+                    bg = topNavigation ? new Color(255, 255, 255, 18) : HOVER;
                 } else {
-                    bg = navigation ? SIDEBAR : PANEL_ALT;
+                    bg = topNavigation ? new Color(0, 0, 0, 0) : navigation ? SIDEBAR : PANEL_ALT;
                 }
-                g2.setColor(bg);
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
-                if (!primary && !navigation) {
+                if (bg.getAlpha() > 0) {
+                    g2.setColor(bg);
+                    g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                }
+                if (!primary && !navigation && !topNavigation) {
                     g2.setColor(BORDER);
                     g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
                 }
                 if (selectedState && navigation) {
                     g2.setColor(ACCENT);
                     g2.fillRoundRect(0, 7, 3, Math.max(0, getHeight() - 14), 3, 3);
-                } else if (selectedState) {
+                } else if (selectedState && topNavigation) {
                     g2.setColor(ACCENT);
-                    int width = Math.min(28, Math.max(12, getWidth() / 3));
-                    g2.fillRoundRect((getWidth() - width) / 2, Math.max(0, getHeight() - 3), width, 2, 2, 2);
+                    int width = Math.min(30, Math.max(14, getWidth() / 3));
+                    g2.fillRoundRect((getWidth() - width) / 2, Math.max(0, getHeight() - 2), width, 2, 2, 2);
                 }
             } finally {
                 g2.dispose();

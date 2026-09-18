@@ -22,7 +22,16 @@ final class DetailDialog extends JDialog {
         this.provider = provider;
         this.item = item;
         setUndecorated(true);
-        setSize(1180, 780);
+        GraphicsConfiguration gc = owner != null
+                ? owner.getGraphicsConfiguration()
+                : GraphicsEnvironment.getLocalGraphicsEnvironment()
+                    .getDefaultScreenDevice().getDefaultConfiguration();
+        Rectangle screen = gc.getBounds();
+        Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(gc);
+        int usableWidth = screen.width - insets.left - insets.right;
+        int usableHeight = screen.height - insets.top - insets.bottom;
+        setSize(Math.min(1450, Math.max(980, usableWidth - 56)),
+                Math.min(820, Math.max(660, usableHeight - 36)));
         setMinimumSize(new Dimension(980, 660));
         setLocationRelativeTo(owner);
         getContentPane().setBackground(Theme.BG);
@@ -69,8 +78,8 @@ final class DetailDialog extends JDialog {
 
     private JComponent buildHero() {
         JLayeredPane hero = new JLayeredPane();
-        hero.setPreferredSize(new Dimension(1160, 390));
-        hero.setMaximumSize(new Dimension(Integer.MAX_VALUE, 390));
+        hero.setPreferredSize(new Dimension(1160, 430));
+        hero.setMaximumSize(new Dimension(Integer.MAX_VALUE, 430));
         hero.setOpaque(true);
         hero.setBackground(Color.BLACK);
 
@@ -273,16 +282,7 @@ final class DetailDialog extends JDialog {
         rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
         rows.setBorder(new EmptyBorder(0, 0, 4, 0));
 
-        JPanel rowsViewport = new JPanel(new BorderLayout());
-        rowsViewport.setOpaque(false);
-        rowsViewport.add(rows, BorderLayout.NORTH);
-
-        JScrollPane episodeScroll = new JScrollPane(rowsViewport);
-        episodeScroll.setBorder(null);
-        episodeScroll.getViewport().setBackground(Theme.BG);
-        episodeScroll.getVerticalScrollBar().setUnitIncrement(24);
-        episodeScroll.setPreferredSize(new Dimension(820, 390));
-        episodeArea.add(episodeScroll, BorderLayout.CENTER);
+        episodeArea.add(rows, BorderLayout.CENTER);
 
         Map<Integer, JButton> seasonButtons = new LinkedHashMap<>();
 
@@ -312,7 +312,6 @@ final class DetailDialog extends JDialog {
 
             rows.revalidate();
             rows.repaint();
-            SwingUtilities.invokeLater(() -> episodeScroll.getVerticalScrollBar().setValue(0));
         };
 
         for (int season : seasons.keySet()) {
