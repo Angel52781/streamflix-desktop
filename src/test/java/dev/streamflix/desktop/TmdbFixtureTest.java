@@ -142,6 +142,17 @@ public final class TmdbFixtureTest {
         List<Models.ShowItem> horror = provider.moviesByGenre(27, 1);
         require(horror.size() == 1, "genre listing count");
         require("tmdb:movie:99".equals(horror.get(0).id()), "genre listing stable id");
+
+        TmdbClient tvClient = client("es", url -> {
+            require(url.contains("discover/tv"), "tv genre endpoint");
+            require(url.contains("with_genres=18"), "tv genre query forwarded");
+            return """
+                    {"results":[{"id":199,"name":"Drama demo","first_air_date":"2026-09-01","vote_average":8.0,"poster_path":"/drama.jpg"}]}
+                    """;
+        });
+        List<Models.ShowItem> drama = new TmdbProvider(tvClient).tvShowsByGenre(18, 1);
+        require(drama.size() == 1 && drama.get(0).type() == Models.ShowType.TV_SHOW,
+                "tv genre listing mapped");
     }
 
     private static void testEpisodesAcrossSeasons() throws Exception {

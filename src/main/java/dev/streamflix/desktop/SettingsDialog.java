@@ -196,9 +196,12 @@ final class SettingsDialog extends JDialog {
         c.insets = new Insets(18, 0, 0, 0);
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         actions.setOpaque(false);
+        JButton guide = Theme.primaryButton("Guía paso a paso");
+        guide.addActionListener(e -> new TmdbGuideDialog(this).setVisible(true));
         JButton openTmdb = Theme.button("Abrir página de TMDb");
         openTmdb.addActionListener(e -> openTmdbSite());
         testButton.addActionListener(e -> testCredential());
+        actions.add(guide);
         actions.add(openTmdb);
         actions.add(testButton);
         tmdb.add(actions, c);

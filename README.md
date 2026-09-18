@@ -14,14 +14,16 @@ You can also browse versioned releases and checksums on the [GitHub Releases pag
 
 Version: **1.2.0**
 
-The `main` branch is currently preparing **1.3.2**, focused on smoother navigation, Home discovery rails and streaming performance.
+The `main` branch is currently preparing **1.3.3**, focused on streaming-style rail navigation, catalog filters and TMDb onboarding.
 
 ### Core experience
 
 - Java 17-compatible JVM application with Swing + FlatLaf
 - Cinematic desktop navigation with Home, Movies, Series, Live TV and Mi lista
 - Home discovery rails for Horror, Thriller, Drama and Comedy
-- Vertical wheel scrolling remains primary; horizontal rails use Shift + wheel
+- Streaming-style rail navigation with visible previous/next controls and contextual horizontal wheel zones
+- "Ver más" actions route Home shelves into filtered Movie/Series catalogs
+- Movie and Series catalog filters for popular content and genres
 - Unified TMDb catalog with **English (en-US)** or **Spanish (es-ES)** selected from Settings
 - TMDb API key or Read Access Token configured locally from Settings
 - High-resolution TMDb posters/backdrops with HiDPI-aware image rendering
@@ -86,6 +88,8 @@ Streamflix accepts either:
 The environment variable has precedence.
 
 The public desktop build currently uses a **BYOK (bring your own key)** model: each user obtains and configures their own TMDb API key or Read Access Token once. One credential works for both TMDb EN and TMDb ES. No real API key is stored in the repository or public binaries.
+
+Settings includes an in-app step-by-step TMDb setup guide with direct links and editable/copyable examples for legitimate personal, educational/open-source or testing use.
 
 ## Build requirements
 

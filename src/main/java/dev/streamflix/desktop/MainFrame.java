@@ -28,6 +28,7 @@ final class MainFrame extends JFrame {
     private final JLabel sectionSubtitle = Theme.muted("Tu contenido, sin ruido");
     private final JLabel status = Theme.muted(" ");
     private final JPanel sectionHeaderPanel = new JPanel(new BorderLayout());
+    private final JPanel catalogFilters = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
     private final JTextField search = new JTextField(27);
     private final Timer searchDebounce;
 
@@ -45,6 +46,8 @@ final class MainFrame extends JFrame {
     private Mode mode = Mode.HOME;
     private int page = 1;
     private String query = "";
+    private Integer catalogGenreId;
+    private String catalogGenreLabel = "Popular";
     private boolean hasMore = true;
     private SwingWorker<?, Void> activeWorker;
 
@@ -93,8 +96,8 @@ final class MainFrame extends JFrame {
 
     private void wireNavigation() {
         homeButton.addActionListener(e -> switchMode(Mode.HOME));
-        moviesButton.addActionListener(e -> switchMode(Mode.MOVIES));
-        seriesButton.addActionListener(e -> switchMode(Mode.SERIES));
+        moviesButton.addActionListener(e -> openCatalog(Mode.MOVIES, null, "Popular"));
+        seriesButton.addActionListener(e -> openCatalog(Mode.SERIES, null, "Popular"));
         liveButton.addActionListener(e -> switchMode(Mode.LIVE));
         favoritesButton.addActionListener(e -> switchMode(Mode.FAVORITES));
     }
@@ -185,7 +188,18 @@ final class MainFrame extends JFrame {
         heading.add(Box.createVerticalStrut(3));
         heading.add(status);
 
-        sectionHeaderPanel.add(heading, BorderLayout.WEST);
+        catalogFilters.setOpaque(false);
+        catalogFilters.setBorder(new EmptyBorder(12, 0, 0, 0));
+
+        JPanel headerContent = new JPanel();
+        headerContent.setOpaque(false);
+        headerContent.setLayout(new BoxLayout(headerContent, BoxLayout.Y_AXIS));
+        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
+        catalogFilters.setAlignmentX(Component.LEFT_ALIGNMENT);
+        headerContent.add(heading);
+        headerContent.add(catalogFilters);
+
+        sectionHeaderPanel.add(headerContent, BorderLayout.WEST);
         return sectionHeaderPanel;
     }
 
@@ -253,6 +267,10 @@ final class MainFrame extends JFrame {
 
         detailOpen = false;
         mode = newMode;
+        if (newMode != Mode.MOVIES && newMode != Mode.SERIES) {
+            catalogGenreId = null;
+            catalogGenreLabel = "Popular";
+        }
         page = 1;
         hasMore = true;
         query = "";
@@ -309,6 +327,8 @@ final class MainFrame extends JFrame {
         detailOpen = false;
         provider = preferredVodProvider(true);
         mode = Mode.SEARCH;
+        catalogGenreId = null;
+        catalogGenreLabel = "Popular";
         query = q;
         page = 1;
         hasMore = true;
@@ -344,15 +364,19 @@ final class MainFrame extends JFrame {
                 List<CompletableFuture<HomeShelf>> shelfFutures = new ArrayList<>();
                 if (movieSource instanceof TmdbProvider tmdb && tmdbReady()) {
                     shelfFutures.add(loadShelfAsync(
+                            Mode.MOVIES, 27,
                             "Terror", "Historias para ver con las luces apagadas",
                             movieSource, () -> tmdb.moviesByGenre(27, 1), 8));
                     shelfFutures.add(loadShelfAsync(
+                            Mode.MOVIES, 53,
                             "Suspenso", "Películas con tensión de principio a fin",
                             movieSource, () -> tmdb.moviesByGenre(53, 1), 8));
                     shelfFutures.add(loadShelfAsync(
+                            Mode.MOVIES, 18,
                             "Drama", "Historias intensas y personajes memorables",
                             movieSource, () -> tmdb.moviesByGenre(18, 1), 8));
                     shelfFutures.add(loadShelfAsync(
+                            Mode.MOVIES, 35,
                             "Comedia", "Algo más ligero para ver ahora",
                             movieSource, () -> tmdb.moviesByGenre(35, 1), 8));
                 }
@@ -407,27 +431,44 @@ final class MainFrame extends JFrame {
         }
 
         if (!data.history().isEmpty()) {
-            homeRoot.add(homeSection("Continuar viendo", "Retoma donde lo dejaste", data.history()));
+            homeRoot.add(homeSection(
+                    "Continuar viendo", "Retoma donde lo dejaste", data.history(), null));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
         if (!data.movies().isEmpty()) {
-            homeRoot.add(homeSection("Películas populares", "Títulos destacados del catálogo", data.movies()));
+            homeRoot.add(homeSection(
+                    "Películas populares",
+                    "Títulos destacados del catálogo",
+                    data.movies(),
+                    () -> openCatalog(Mode.MOVIES, null, "Popular")));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
         if (!data.series().isEmpty()) {
-            homeRoot.add(homeSection("Series populares", "Historias para seguir viendo", data.series()));
+            homeRoot.add(homeSection(
+                    "Series populares",
+                    "Historias para seguir viendo",
+                    data.series(),
+                    () -> openCatalog(Mode.SERIES, null, "Popular")));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
         for (HomeShelf shelf : data.discovery()) {
-            homeRoot.add(homeSection(shelf.title(), shelf.subtitle(), shelf.items()));
+            homeRoot.add(homeSection(
+                    shelf.title(),
+                    shelf.subtitle(),
+                    shelf.items(),
+                    () -> openCatalog(shelf.mode(), shelf.genreId(), shelf.title())));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
         if (!data.live().isEmpty()) {
-            homeRoot.add(homeSection("TV en vivo", "Canales disponibles ahora", data.live()));
+            homeRoot.add(homeSection(
+                    "TV en vivo",
+                    "Canales disponibles ahora",
+                    data.live(),
+                    () -> switchMode(Mode.LIVE)));
         }
 
         if (homeRoot.getComponentCount() == 0) {
@@ -439,7 +480,8 @@ final class MainFrame extends JFrame {
         homeRoot.repaint();
     }
 
-    private JComponent homeSection(String title, String subtitle, List<Models.ShowItem> items) {
+    private JComponent homeSection(
+            String title, String subtitle, List<Models.ShowItem> items, Runnable viewMore) {
         JPanel section = new JPanel(new BorderLayout(0, 12));
         section.setOpaque(false);
         section.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -461,6 +503,24 @@ final class MainFrame extends JFrame {
         text.add(Box.createVerticalStrut(3));
         text.add(sub);
         heading.add(text, BorderLayout.WEST);
+
+        JPanel railActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        railActions.setOpaque(false);
+        JButton previous = Theme.button("‹");
+        JButton next = Theme.button("›");
+        previous.setToolTipText("Anterior");
+        next.setToolTipText("Siguiente");
+        previous.setPreferredSize(new Dimension(38, 34));
+        next.setPreferredSize(new Dimension(38, 34));
+        railActions.add(previous);
+        railActions.add(next);
+
+        if (viewMore != null) {
+            JButton more = Theme.button("Ver más");
+            more.addActionListener(e -> viewMore.run());
+            railActions.add(more);
+        }
+        heading.add(railActions, BorderLayout.EAST);
         section.add(heading, BorderLayout.NORTH);
 
         JPanel rail = new JPanel();
@@ -479,16 +539,44 @@ final class MainFrame extends JFrame {
         scroll.getViewport().setOpaque(false);
         scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        scroll.getHorizontalScrollBar().setUnitIncrement(34);
+        JScrollBar horizontal = scroll.getHorizontalScrollBar();
+        horizontal.setUnitIncrement(34);
         scroll.setWheelScrollingEnabled(false);
+
+        Runnable updateArrows = () -> {
+            int max = Math.max(horizontal.getMinimum(),
+                    horizontal.getMaximum() - horizontal.getVisibleAmount());
+            previous.setEnabled(horizontal.getValue() > horizontal.getMinimum());
+            next.setEnabled(horizontal.getValue() < max);
+        };
+        horizontal.addAdjustmentListener(e -> updateArrows.run());
+
+        previous.addActionListener(e ->
+                scrollBarBy(horizontal, -1.0, Math.max(240, scroll.getViewport().getWidth() - 100)));
+        next.addActionListener(e ->
+                scrollBarBy(horizontal, 1.0, Math.max(240, scroll.getViewport().getWidth() - 100)));
+
         scroll.addMouseWheelListener(e -> {
-            if (e.isShiftDown()) {
-                scrollBarBy(scroll.getHorizontalScrollBar(), e.getPreciseWheelRotation(), 84);
+            int hotZoneStart = Math.max(92, (int) Math.round(scroll.getHeight() * 0.56));
+            boolean horizontalZone = e.getY() >= hotZoneStart;
+            boolean canScrollHorizontally = horizontal.getMaximum() - horizontal.getMinimum()
+                    > horizontal.getVisibleAmount();
+
+            if ((horizontalZone || e.isShiftDown()) && canScrollHorizontally) {
+                scrollBarBy(horizontal, e.getPreciseWheelRotation(), 84);
             } else {
                 scrollBarBy(homeScroll.getVerticalScrollBar(), e.getPreciseWheelRotation(), 58);
             }
             e.consume();
         });
+
+        scroll.addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent e) {
+                updateArrows.run();
+            }
+        });
+        SwingUtilities.invokeLater(updateArrows);
+
         scroll.setPreferredSize(new Dimension(800, 198));
         section.add(scroll, BorderLayout.CENTER);
         return section;
@@ -523,6 +611,7 @@ final class MainFrame extends JFrame {
         Mode requestMode = mode;
         int requestPage = page;
         String requestQuery = query;
+        Integer requestGenreId = catalogGenreId;
 
         if (!append) loadedItems.clear();
 
@@ -540,8 +629,13 @@ final class MainFrame extends JFrame {
         activeWorker = new SwingWorker<List<Models.ShowItem>, Void>() {
             @Override protected List<Models.ShowItem> doInBackground() throws Exception {
                 List<Models.ShowItem> items = switch (requestMode) {
-                    case MOVIES -> requestProvider.movies(requestPage);
-                    case SERIES, LIVE -> requestProvider.tvShows(requestPage);
+                    case MOVIES -> requestProvider instanceof TmdbProvider tmdb && requestGenreId != null
+                            ? tmdb.moviesByGenre(requestGenreId, requestPage)
+                            : requestProvider.movies(requestPage);
+                    case SERIES -> requestProvider instanceof TmdbProvider tmdb && requestGenreId != null
+                            ? tmdb.tvShowsByGenre(requestGenreId, requestPage)
+                            : requestProvider.tvShows(requestPage);
+                    case LIVE -> requestProvider.tvShows(requestPage);
                     case SEARCH -> requestProvider.search(requestQuery, requestPage);
                     case FAVORITES -> UserData.getFavorites();
                     case HOME -> List.of();
@@ -774,6 +868,74 @@ final class MainFrame extends JFrame {
         Theme.setNavSelected(favoritesButton, mode == Mode.FAVORITES);
     }
 
+    private void openCatalog(Mode targetMode, Integer genreId, String genreLabel) {
+        if (targetMode != Mode.MOVIES && targetMode != Mode.SERIES) {
+            throw new IllegalArgumentException("Catalog mode required");
+        }
+
+        if (activeWorker != null && !activeWorker.isDone()) activeWorker.cancel(true);
+        searchDebounce.stop();
+
+        detailOpen = false;
+        mode = targetMode;
+        provider = preferredVodProvider(targetMode == Mode.MOVIES);
+        catalogGenreId = genreId;
+        catalogGenreLabel = genreLabel == null || genreLabel.isBlank() ? "Popular" : genreLabel;
+        page = 1;
+        hasMore = true;
+        query = "";
+        loadedItems.clear();
+        search.setText("");
+
+        updateNavigationState();
+        updateHeader();
+        loadPage(false);
+        SwingUtilities.invokeLater(() -> catalogScroll.getVerticalScrollBar().setValue(0));
+    }
+
+    private void renderCatalogFilters() {
+        catalogFilters.removeAll();
+
+        List<GenreFilter> filters = switch (mode) {
+            case MOVIES -> List.of(
+                    new GenreFilter("Popular", null),
+                    new GenreFilter("Acción", 28),
+                    new GenreFilter("Comedia", 35),
+                    new GenreFilter("Drama", 18),
+                    new GenreFilter("Terror", 27),
+                    new GenreFilter("Suspenso", 53),
+                    new GenreFilter("Ciencia ficción", 878),
+                    new GenreFilter("Romance", 10749),
+                    new GenreFilter("Documental", 99)
+            );
+            case SERIES -> List.of(
+                    new GenreFilter("Popular", null),
+                    new GenreFilter("Acción/Aventura", 10759),
+                    new GenreFilter("Comedia", 35),
+                    new GenreFilter("Drama", 18),
+                    new GenreFilter("Crimen", 80),
+                    new GenreFilter("Misterio", 9648),
+                    new GenreFilter("Sci-Fi/Fantasía", 10765),
+                    new GenreFilter("Documental", 99),
+                    new GenreFilter("Animación", 16)
+            );
+            default -> List.of();
+        };
+
+        for (GenreFilter filter : filters) {
+            JButton button = Theme.button(filter.label());
+            boolean selected = java.util.Objects.equals(catalogGenreId, filter.genreId());
+            Theme.setNavSelected(button, selected);
+            button.addActionListener(e ->
+                    openCatalog(mode, filter.genreId(), filter.label()));
+            catalogFilters.add(button);
+        }
+
+        catalogFilters.setVisible(!filters.isEmpty());
+        catalogFilters.revalidate();
+        catalogFilters.repaint();
+    }
+
     private void updateHeader() {
         String title = switch (mode) {
             case HOME -> "Inicio";
@@ -795,7 +957,13 @@ final class MainFrame extends JFrame {
             case SERIES -> "Explora series";
             default -> "";
         };
+        if ((mode == Mode.MOVIES || mode == Mode.SERIES)
+                && catalogGenreLabel != null && !"Popular".equals(catalogGenreLabel)) {
+            subtitle += " · " + catalogGenreLabel;
+        }
+
         sectionSubtitle.setText(subtitle);
+        renderCatalogFilters();
         status.setText(" ");
     }
 
@@ -867,12 +1035,21 @@ final class MainFrame extends JFrame {
     }
 
     private static CompletableFuture<HomeShelf> loadShelfAsync(
+            Mode mode, Integer genreId,
             String title, String subtitle, Provider source, Loader loader, int limit) {
         return loadAsync(source, loader, limit)
-                .thenApply(items -> new HomeShelf(title, subtitle, items));
+                .thenApply(items -> new HomeShelf(mode, genreId, title, subtitle, items));
     }
 
-    private record HomeShelf(String title, String subtitle, List<Models.ShowItem> items) {}
+    private record GenreFilter(String label, Integer genreId) {}
+
+    private record HomeShelf(
+            Mode mode,
+            Integer genreId,
+            String title,
+            String subtitle,
+            List<Models.ShowItem> items
+    ) {}
 
     private record HomeData(
             List<Models.ShowItem> history,
