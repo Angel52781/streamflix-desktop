@@ -14,16 +14,16 @@ final class ShowCard extends JPanel {
     ShowCard(Models.ShowItem item, Consumer<Models.ShowItem> onOpen) {
         setLayout(new BorderLayout(0, 10));
         setOpaque(false);
-        setBorder(new EmptyBorder(8, 8, 10, 8));
-        setPreferredSize(new Dimension(188, 324));
+        setBorder(new EmptyBorder(4, 4, 8, 4));
+        setPreferredSize(new Dimension(182, 316));
         setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         PosterLabel poster = new PosterLabel();
         poster.setText("Cargando…");
         poster.setHorizontalAlignment(SwingConstants.CENTER);
-        poster.setPreferredSize(new Dimension(172, 252));
+        poster.setPreferredSize(new Dimension(174, 258));
         poster.setForeground(Theme.MUTED);
-        ImageLoader.load(item.poster(), poster, 172, 252);
+        ImageLoader.load(item.poster(), poster, 174, 258);
         add(poster, BorderLayout.CENTER);
 
         JPanel meta = new JPanel();
@@ -49,7 +49,7 @@ final class ShowCard extends JPanel {
         detailsRow.add(details, BorderLayout.WEST);
 
         if (item.rating() != null) {
-            JLabel rating = new JLabel("★ " + String.format("%.1f", item.rating()));
+            JLabel rating = new JLabel(String.format("%.1f", item.rating()));
             rating.setForeground(new Color(239, 195, 76));
             rating.setFont(Theme.FONT_BOLD.deriveFont(11.5f));
             detailsRow.add(rating, BorderLayout.EAST);
@@ -102,10 +102,12 @@ final class ShowCard extends JPanel {
         Graphics2D g2 = (Graphics2D) g.create();
         try {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g2.setColor(hovered || focused ? Theme.HOVER : Theme.PANEL);
-            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 16, 16);
-            g2.setColor(focused ? Theme.ACCENT : Theme.BORDER);
-            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 16, 16);
+            if (hovered || focused) {
+                g2.setColor(Theme.HOVER);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+                g2.setColor(focused ? Theme.ACCENT : Theme.BORDER);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+            }
         } finally {
             g2.dispose();
         }

@@ -21,6 +21,8 @@ final class DetailDialog extends JDialog {
         super(owner, item.title(), ModalityType.MODELESS);
         this.provider = provider;
         this.item = item;
+        getRootPane().putClientProperty("JRootPane.titleBarBackground", Theme.SIDEBAR);
+        getRootPane().putClientProperty("JRootPane.titleBarForeground", Theme.TEXT);
         setSize(1040, 720);
         setMinimumSize(new Dimension(880, 620));
         setLocationRelativeTo(owner);
@@ -136,7 +138,7 @@ final class DetailDialog extends JDialog {
         meta.setOpaque(false);
         if (item.released() != null) meta.add(metaPill(item.released()));
         if (item.runtimeMinutes() != null) meta.add(metaPill(item.runtimeMinutes() + " min"));
-        if (item.rating() != null) meta.add(metaPill("★ " + String.format("%.1f", item.rating())));
+        if (item.rating() != null) meta.add(metaPill(String.format("%.1f / 10", item.rating())));
         return meta;
     }
 
@@ -189,80 +191,103 @@ final class DetailDialog extends JDialog {
                 .collect(Collectors.groupingBy(Models.Episode::seasonNumber, TreeMap::new, Collectors.toList()));
         if (seasons.isEmpty()) {
             episodeArea.add(Theme.muted("No hay episodios disponibles."), BorderLayout.CENTER);
-            episodeArea.revalidate(); episodeArea.repaint();
+            episodeArea.revalidate();
+            episodeArea.repaint();
             return;
         }
 
-        JPanel controls = new JPanel(new BorderLayout(12, 0));
-        controls.setOpaque(false);
-        controls.setBorder(new EmptyBorder(0, 0, 10, 0));
+        JPanel header = new JPanel();
+        header.setOpaque(false);
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+        header.setBorder(new EmptyBorder(0, 0, 12, 0));
 
-        JLabel episodesTitle = Theme.heading("Episodios", 18f);
-        controls.add(episodesTitle, BorderLayout.WEST);
+        JLabel episodesTitle = Theme.heading("Episodios", 19f);
+        episodesTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+        header.add(episodesTitle);
+        header.add(Box.createVerticalStrut(10));
 
-        JPanel seasonControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 7, 0));
-        seasonControls.setOpaque(false);
-        JLabel seasonLabel = Theme.muted("Temporada");
-        seasonLabel.setFont(Theme.FONT.deriveFont(12f));
-        JComboBox<Integer> seasonBox = new JComboBox<>(seasons.keySet().toArray(Integer[]::new));
-        seasonBox.setPreferredSize(new Dimension(100, 34));
-        seasonControls.add(seasonLabel);
-        seasonControls.add(seasonBox);
-        controls.add(seasonControls, BorderLayout.EAST);
-        episodeArea.add(controls, BorderLayout.NORTH);
+        JPanel seasonTabs = new JPanel(new FlowLayout(FlowLayout.LEFT, 7, 0));
+        seasonTabs.setOpaque(false);
+
+        JScrollPane seasonScroll = new JScrollPane(seasonTabs);
+        seasonScroll.setBorder(null);
+        seasonScroll.setOpaque(false);
+        seasonScroll.getViewport().setOpaque(false);
+        seasonScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        seasonScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
+        seasonScroll.getHorizontalScrollBar().setUnitIncrement(24);
+        seasonScroll.setPreferredSize(new Dimension(560, 48));
+        seasonScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+        header.add(seasonScroll);
+        episodeArea.add(header, BorderLayout.NORTH);
 
         DefaultListModel<Models.Episode> model = new DefaultListModel<>();
         JList<Models.Episode> list = new JList<>(model);
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        list.setVisibleRowCount(7);
+        list.setFixedCellHeight(48);
         list.setCellRenderer(new DefaultListCellRenderer() {
-            @Override public Component getListCellRendererComponent(JList<?> l, Object value, int index, boolean selected, boolean focus) {
+            @Override public Component getListCellRendererComponent(
+                    JList<?> l, Object value, int index, boolean selected, boolean focus) {
                 JLabel label = (JLabel) super.getListCellRendererComponent(l, value, index, selected, focus);
                 Models.Episode ep = (Models.Episode) value;
-                String title = ep.title() == null || ep.title().isBlank() ? "Episodio " + ep.episodeNumber() : ep.title();
-                label.setText("<html><b>E" + ep.episodeNumber() + "</b>&nbsp;&nbsp; " + escapeHtml(title) + "</html>");
-                label.setBorder(new EmptyBorder(10, 12, 10, 12));
+                String title = ep.title() == null || ep.title().isBlank()
+                        ? "Episodio " + ep.episodeNumber() : ep.title();
+                label.setText("<html><b>E" + ep.episodeNumber() + "</b>&nbsp;&nbsp; "
+                        + escapeHtml(title) + "</html>");
+                label.setBorder(new EmptyBorder(11, 13, 11, 13));
                 label.setFont(Theme.FONT.deriveFont(13f));
                 return label;
             }
         });
 
-        Runnable populate = () -> {
-            Integer selected = (Integer) seasonBox.getSelectedItem();
+        Map<Integer, JButton> seasonButtons = new LinkedHashMap<>();
+        java.util.function.IntConsumer selectSeason = selectedSeason -> {
             model.clear();
-            if (selected != null) seasons.getOrDefault(selected, List.of()).forEach(model::addElement);
+            seasons.getOrDefault(selectedSeason, List.of()).forEach(model::addElement);
             if (!model.isEmpty()) list.setSelectedIndex(0);
+            for (var entry : seasonButtons.entrySet()) {
+                Theme.setNavSelected(entry.getValue(), entry.getKey() == selectedSeason);
+            }
         };
-        seasonBox.addActionListener(e -> populate.run());
-        populate.run();
 
-        list.setVisibleRowCount(7);
-        list.setFixedCellHeight(42);
+        for (int season : seasons.keySet()) {
+            String label = season == 0 ? "Especiales" : "Temporada " + season;
+            JButton button = Theme.button(label);
+            seasonButtons.put(season, button);
+            button.addActionListener(e -> selectSeason.accept(season));
+            seasonTabs.add(button);
+        }
+
+        int initialSeason = seasons.containsKey(1) ? 1 : seasons.keySet().iterator().next();
+        selectSeason.accept(initialSeason);
+
         JScrollPane episodeScroll = new JScrollPane(list);
         episodeScroll.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
-        episodeScroll.setPreferredSize(new Dimension(560, 300));
+        episodeScroll.setPreferredSize(new Dimension(560, 320));
         episodeArea.add(episodeScroll, BorderLayout.CENTER);
-        
+
         JButton playEpisode = Theme.primaryButton("Reproducir episodio");
         playEpisode.addActionListener(e -> {
             Models.Episode ep = list.getSelectedValue();
             if (ep == null) return;
-            chooseServerAndPlay(ep.id(), item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(), true);
+            chooseServerAndPlay(ep.id(),
+                    item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(), true);
         });
-        
+
         JButton selectServer = Theme.button("Elegir servidor");
         selectServer.addActionListener(e -> {
             Models.Episode ep = list.getSelectedValue();
             if (ep == null) return;
-            chooseServerAndPlay(ep.id(), item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(), false);
+            chooseServerAndPlay(ep.id(),
+                    item.title() + " · T" + ep.seasonNumber() + "E" + ep.episodeNumber(), false);
         });
-        
-        JPanel epButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+
+        JPanel epButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         epButtons.setOpaque(false);
-        epButtons.add(playEpisode);
-        epButtons.add(Box.createHorizontalStrut(10));
-        epButtons.add(selectServer);
-        
         epButtons.setBorder(new EmptyBorder(12, 0, 0, 0));
+        epButtons.add(playEpisode);
+        epButtons.add(selectServer);
         episodeArea.add(epButtons, BorderLayout.SOUTH);
 
         list.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -275,59 +300,60 @@ final class DetailDialog extends JDialog {
             }
         });
 
-        episodeArea.revalidate(); episodeArea.repaint();
+        episodeArea.revalidate();
+        episodeArea.repaint();
     }
 
     private void chooseServerAndPlay(String providerItemId, String mediaTitle, boolean autoPlay) {
         long playbackRequest = MpvPlayer.beginRequest();
+        EmbeddedPlayerWindow preparingWindow = autoPlay ? EmbeddedPlayerWindow.open(this, mediaTitle) : null;
+        if (preparingWindow != null) preparingWindow.setPreparing("Buscando servidores disponibles…");
+
         status.setText("Buscando servidores…");
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         new SwingWorker<List<Models.Server>, Void>() {
-            @Override protected List<Models.Server> doInBackground() throws Exception { return provider.servers(providerItemId); }
+            @Override protected List<Models.Server> doInBackground() throws Exception {
+                return provider.servers(providerItemId);
+            }
+
             @Override protected void done() {
                 if (MpvPlayer.isShutdown() || !isDisplayable()) return;
                 setCursor(Cursor.getDefaultCursor());
                 try {
                     List<Models.Server> servers = get();
                     if (servers.isEmpty()) {
-                        status.setText("Sin servidores");
-                        JOptionPane.showMessageDialog(DetailDialog.this, "El provider no devolvió servidores para este contenido.", "Sin servidores", JOptionPane.WARNING_MESSAGE);
+                        status.setText("Sin servidores disponibles");
+                        if (preparingWindow != null) preparingWindow.showFailure("No hay servidores disponibles para este contenido.");
+                        else showError("Sin servidores", new IllegalStateException(
+                                "La fuente no devolvió servidores para este contenido."));
                         return;
                     }
-                    Models.Server selected;
+
                     if (autoPlay) {
-                        resolveAnyAndPlay(servers, mediaTitle, playbackRequest);
+                        resolveAnyAndPlay(servers, mediaTitle, playbackRequest, preparingWindow);
                         return;
-                    } else {
-                        selected = selectServer(servers);
                     }
-                    
-                    if (selected == null) return;
-                    if ("__auto__".equals(selected.id())) resolveAnyAndPlay(servers, mediaTitle, playbackRequest);
-                    else resolveAndPlay(selected, mediaTitle, playbackRequest);
+
+                    ServerPickerDialog.Choice choice = ServerPickerDialog.choose(DetailDialog.this, servers);
+                    if (choice == null) return;
+
+                    EmbeddedPlayerWindow player = EmbeddedPlayerWindow.open(DetailDialog.this, mediaTitle);
+                    if (choice.automatic()) {
+                        resolveAnyAndPlay(servers, mediaTitle, playbackRequest, player);
+                    } else {
+                        resolveAndPlay(choice.server(), mediaTitle, playbackRequest, player);
+                    }
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     status.setText("Error obteniendo servidores");
-                    showError("No se pudieron obtener servidores", cause);
+                    if (preparingWindow != null) preparingWindow.showFailure(
+                            cause.getMessage() == null ? "No se pudieron obtener servidores." : cause.getMessage());
+                    else showError("No se pudieron obtener servidores", cause);
                 }
             }
         }.execute();
     }
 
-    private Models.Server selectServer(List<Models.Server> servers) {
-        String automatic = "Automático (probar servidores compatibles)";
-        String[] labels = new String[servers.size() + 1];
-        labels[0] = automatic;
-        for (int i = 0; i < servers.size(); i++) labels[i + 1] = servers.get(i).name();
-        String selected = (String) JOptionPane.showInputDialog(
-                this, "Selecciona un servidor:", "Servidor",
-                JOptionPane.PLAIN_MESSAGE, null, labels, labels[0]
-        );
-        if (selected == null) return null;
-        if (Objects.equals(selected, automatic)) return new Models.Server("__auto__", automatic, "");
-        for (int i = 0; i < servers.size(); i++) if (Objects.equals(servers.get(i).name(), selected)) return servers.get(i);
-        return null;
-    }
 
     @FunctionalInterface
     interface VideoResolver { Models.Video resolve(Models.Server server) throws Exception; }
@@ -364,67 +390,92 @@ final class DetailDialog extends JDialog {
         starter.start(video, title);
     }
 
-    private void resolveAnyAndPlay(List<Models.Server> servers, String mediaTitle, long playbackRequest) {
+    private void resolveAnyAndPlay(List<Models.Server> servers, String mediaTitle,
+                                   long playbackRequest, EmbeddedPlayerWindow player) {
         status.setText("Buscando un servidor compatible…");
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+
         new SwingWorker<Models.Server, Void>() {
             @Override protected Models.Server doInBackground() throws Exception {
-                return startFirstAvailable(servers, mediaTitle, extractors::resolve,
-                        (video, title) -> MpvPlayer.play(video, title, playbackRequest));
+                Exception last = null;
+                for (Models.Server server : servers) {
+                    if (!player.isDisplayable()) {
+                        throw new CancellationException("Reproductor cerrado.");
+                    }
+                    player.setPreparing("Probando " + server.name() + "…");
+                    try {
+                        Models.Video video = extractors.resolve(server);
+                        if (video == null || video.source() == null || video.source().isBlank()) {
+                            throw new IllegalStateException("El servidor no devolvió un video reproducible.");
+                        }
+                        player.start(video, server.name(), playbackRequest);
+                        return server;
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        throw ex;
+                    } catch (CancellationException ex) {
+                        throw ex;
+                    } catch (Exception ex) {
+                        last = ex;
+                    }
+                }
+                throw new IllegalStateException("Ningún servidor disponible pudo iniciar la reproducción.", last);
             }
+
             @Override protected void done() {
-                if (MpvPlayer.isShutdown() || !isDisplayable()) return;
                 setCursor(Cursor.getDefaultCursor());
                 try {
                     Models.Server server = get();
                     UserData.recordHistory(provider.id(), item);
-                    status.setText("Reproduciendo \u2014 " + server.name());
+                    status.setText("Reproduciendo · " + server.name());
                 } catch (Exception ex) {
-                    Throwable cause = ex instanceof ExecutionException && ex.getCause() != null ? ex.getCause() : ex;
+                    Throwable cause = ex instanceof ExecutionException && ex.getCause() != null
+                            ? ex.getCause() : ex;
                     status.setText("No se pudo reproducir");
-                    showError("No se encontró un servidor compatible", cause);
+                    if (player.isDisplayable()) {
+                        player.showFailure(cause.getMessage() == null
+                                ? "No se encontró un servidor compatible." : cause.getMessage());
+                    }
                 }
             }
         }.execute();
     }
 
-    private void resolveAndPlay(Models.Server server, String mediaTitle, long playbackRequest) {
-        status.setText("Resolviendo " + server.name() + "…");
+    private void resolveAndPlay(Models.Server server, String mediaTitle,
+                                long playbackRequest, EmbeddedPlayerWindow player) {
+        status.setText("Preparando " + server.name() + "…");
+        player.setPreparing("Preparando " + server.name() + "…");
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() throws Exception {
-                resolveAndStart(server, mediaTitle, extractors::resolve,
-                        (video, title) -> MpvPlayer.play(video, title, playbackRequest));
+                Models.Video video = extractors.resolve(server);
+                if (video == null || video.source() == null || video.source().isBlank()) {
+                    throw new IllegalStateException("El servidor no devolvió un video reproducible.");
+                }
+                player.start(video, server.name(), playbackRequest);
                 return null;
             }
+
             @Override protected void done() {
-                if (MpvPlayer.isShutdown() || !isDisplayable()) return;
                 setCursor(Cursor.getDefaultCursor());
                 try {
                     get();
                     UserData.recordHistory(provider.id(), item);
-                    status.setText("Reproduciendo \u2014 " + server.name());
-                } catch (ExecutionException ex) {
-                    Throwable cause = ex.getCause();
-                    if (cause instanceof IllegalStateException && cause.getMessage() != null && cause.getMessage().contains("mpv")) {
-                        status.setText("mpv requerido");
-                        showError("mpv no est\u00e1 disponible", cause);
-                    } else if (cause instanceof UnsupportedOperationException) {
-                        fallbackPrompt(server, cause.getMessage());
-                    } else {
-                        fallbackPrompt(server, "El extractor falló: " + (cause == null ? ex.getMessage() : cause.getMessage()));
-                    }
+                    status.setText("Reproduciendo · " + server.name());
                 } catch (Exception ex) {
-                    if (ex instanceof IllegalStateException && ex.getMessage() != null && ex.getMessage().contains("mpv")) {
-                        status.setText("mpv requerido");
-                        showError("mpv no está disponible", ex);
-                    } else {
-                        fallbackPrompt(server, ex.getMessage());
+                    Throwable cause = ex instanceof ExecutionException && ex.getCause() != null
+                            ? ex.getCause() : ex;
+                    status.setText("No se pudo reproducir");
+                    if (player.isDisplayable()) {
+                        player.showFailure(cause.getMessage() == null
+                                ? "No se pudo iniciar la reproducción." : cause.getMessage());
                     }
                 }
             }
         }.execute();
     }
+
 
     private void fallbackPrompt(Models.Server server, String reason) {
         status.setText("Servidor aún sin extractor desktop");

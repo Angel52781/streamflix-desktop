@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class MpvPlayerTest {
     public static void main(String[] args) throws Exception {
         testCommandHeadersAndSubtitlePreference();
+        testEmbeddedCommand();
         testImmediateFailureRejected();
         testNewPlaybackStopsPrevious();
         testStaleRequestCannotReplaceNewerIntent();
@@ -41,6 +42,17 @@ public final class MpvPlayerTest {
         int en = command.indexOf("--sub-file=en.vtt");
         require(d >= 0 && d < es && es < en, "default then Spanish then English subtitle order");
         require(command.contains("--force-media-title=Title Line"), "title sanitized");
+    }
+
+    private static void testEmbeddedCommand() {
+        Models.Video video = new Models.Video("https://cdn.example/video.m3u8");
+        List<String> command = MpvPlayer.embeddedPlaybackCommand(
+                "mpv.exe", video, "Embedded", 12345L, "\\\\.\\pipe\\streamflix-test");
+        require(command.contains("--wid=12345"), "embedded HWND forwarded");
+        require(command.contains("--input-ipc-server=\\\\.\\pipe\\streamflix-test"), "embedded IPC pipe forwarded");
+        require(command.contains("--osc=no"), "external mpv OSC disabled");
+        require(command.contains("--input-default-bindings=no"), "external bindings disabled");
+        require(command.contains("--keep-open=yes"), "embedded playback stays attached");
     }
 
     private static void testImmediateFailureRejected() throws Exception {

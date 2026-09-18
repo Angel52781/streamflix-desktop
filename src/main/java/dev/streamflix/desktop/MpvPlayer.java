@@ -49,6 +49,13 @@ final class MpvPlayer {
         PLAYER.start(video, title, requestId);
     }
 
+    static void playEmbedded(Models.Video video, String title, long requestId,
+                             long windowId, String ipcPath) throws Exception {
+        PLAYER.startEmbedded(video, title, requestId, windowId, ipcPath);
+    }
+
+    static void stopCurrent() { PLAYER.stop(); }
+
     static void shutdown() { PLAYER.close(); }
     static boolean isShutdown() { return PLAYER.closed; }
 
@@ -64,11 +71,22 @@ final class MpvPlayer {
     }
 
     synchronized void start(Models.Video video, String title, long requestId) throws Exception {
+        startCommand(video, requestId, playbackCommand(executable.get(), video, title));
+    }
+
+    synchronized void startEmbedded(Models.Video video, String title, long requestId,
+                                    long windowId, String ipcPath) throws Exception {
+        if (windowId == 0L) throw new IllegalArgumentException("Ventana de video no disponible.");
+        if (ipcPath == null || ipcPath.isBlank()) throw new IllegalArgumentException("Canal IPC no disponible.");
+        startCommand(video, requestId,
+                embeddedPlaybackCommand(executable.get(), video, title, windowId, ipcPath));
+    }
+
+    private void startCommand(Models.Video video, long requestId, List<String> command) throws Exception {
         checkRequest(requestId);
         if (video == null || video.source() == null || video.source().isBlank()) {
             throw new IllegalArgumentException("El servidor no devolvi\u00f3 un video reproducible.");
         }
-        List<String> command = playbackCommand(executable.get(), video, title);
         stop();
         checkRequest(requestId);
         active = launch(command);
@@ -135,17 +153,37 @@ final class MpvPlayer {
     }
 
     static List<String> playbackCommand(String mpv, Models.Video video, String title) {
-        ArrayList<String> cmd = new ArrayList<>();
-        cmd.add(mpv);
+        ArrayList<String> cmd = basePlaybackCommand(mpv, video, title);
         cmd.add("--force-window=yes");
         cmd.add("--keep-open=no");
         cmd.add("--save-position-on-quit");
+        cmd.add(video.source());
+        return List.copyOf(cmd);
+    }
+
+    static List<String> embeddedPlaybackCommand(String mpv, Models.Video video, String title,
+                                                long windowId, String ipcPath) {
+        ArrayList<String> cmd = basePlaybackCommand(mpv, video, title);
+        cmd.add("--wid=" + Long.toUnsignedString(windowId));
+        cmd.add("--force-window=yes");
+        cmd.add("--keep-open=yes");
+        cmd.add("--osc=no");
+        cmd.add("--input-default-bindings=no");
+        cmd.add("--input-vo-keyboard=no");
+        cmd.add("--input-ipc-server=" + ipcPath);
+        cmd.add("--no-border");
+        cmd.add(video.source());
+        return List.copyOf(cmd);
+    }
+
+    private static ArrayList<String> basePlaybackCommand(String mpv, Models.Video video, String title) {
+        ArrayList<String> cmd = new ArrayList<>();
+        cmd.add(mpv);
         cmd.add("--hwdec=auto-safe");
         cmd.add("--force-media-title=" + safe(title));
+        cmd.add("--audio-client-name=Streamflix");
         addHeaders(cmd, video);
         List<Models.Subtitle> subtitles = orderedSubtitles(video.subtitles());
-        // Let mpv assign track IDs: embedded subtitles can occupy any earlier IDs.
-        // Explicit external files take priority, with insertion order breaking ties.
         if (!subtitles.isEmpty()) {
             cmd.add("--slang=es,spa,es-ES,es-419,en,eng");
             cmd.add("--sid=auto");
@@ -153,8 +191,7 @@ final class MpvPlayer {
         for (Models.Subtitle subtitle : subtitles) {
             cmd.add("--sub-file=" + subtitle.file());
         }
-        cmd.add(video.source());
-        return List.copyOf(cmd);
+        return cmd;
     }
 
     static List<Models.Subtitle> orderedSubtitles(List<Models.Subtitle> subtitles) {

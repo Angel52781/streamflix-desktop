@@ -3,6 +3,7 @@ package dev.streamflix.desktop;
 import javax.imageio.ImageIO;
 import org.jsoup.Jsoup;
 import com.formdev.flatlaf.FlatDarkLaf;
+import com.sun.jna.Native;
 
 /** Runs against the built JAR, so its manifest must resolve sibling libraries. */
 public final class DependencySmokeTest {
@@ -15,6 +16,9 @@ public final class DependencySmokeTest {
         }
         if (FlatDarkLaf.class.getName().isBlank()) {
             throw new AssertionError("FlatLaf unavailable");
+        }
+        if (Native.class.getName().isBlank()) {
+            throw new AssertionError("JNA unavailable");
         }
         System.out.println("DependencySmokeTest OK");
     }

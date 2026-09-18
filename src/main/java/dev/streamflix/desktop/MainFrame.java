@@ -17,6 +17,7 @@ final class MainFrame extends JFrame {
     private boolean updatingProviderBox;
 
     private final JComboBox<String> providerBox = new JComboBox<>();
+    private final JLabel sourceLabel = Theme.muted("Catálogo");
     private final JPanel sourceWrap = new JPanel(new BorderLayout(7, 0));
     private final JPanel contentStack = new JPanel(new CardLayout());
     private final JPanel grid = new JPanel();
@@ -54,6 +55,8 @@ final class MainFrame extends JFrame {
         this.provider = preferredVodProvider(true);
 
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        getRootPane().putClientProperty("JRootPane.titleBarBackground", Theme.SIDEBAR);
+        getRootPane().putClientProperty("JRootPane.titleBarForeground", Theme.TEXT);
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) { MpvPlayer.shutdown(); }
         });
@@ -213,10 +216,10 @@ final class MainFrame extends JFrame {
 
         sourceWrap.setOpaque(false);
         sourceWrap.setBorder(new EmptyBorder(0, 0, 0, 4));
-        JLabel sourceLabel = Theme.muted("Fuente");
         sourceLabel.setFont(Theme.FONT.deriveFont(12f));
         sourceWrap.add(sourceLabel, BorderLayout.WEST);
         providerBox.setPreferredSize(new Dimension(205, 38));
+        providerBox.setToolTipText("El catálogo elegido determina dónde se buscan los títulos.");
         providerBox.addActionListener(e -> {
             if (!updatingProviderBox) switchProvider(providerBox.getSelectedIndex());
         });
@@ -315,10 +318,15 @@ final class MainFrame extends JFrame {
 
     private Provider preferredVodProvider(boolean movies) {
         boolean tmdbReady = tmdbReady();
-        for (Provider p : providers) {
-            if (p instanceof M3uLiveProvider) continue;
-            if ((movies && !p.supportsMovies()) || (!movies && !p.supportsTvShows())) continue;
-            if (tmdbReady && p instanceof TmdbProvider) return p;
+        if (tmdbReady) {
+            Provider spanishTmdb = ProviderRegistry.get("tmdb-es");
+            if (spanishTmdb != null && (movies ? spanishTmdb.supportsMovies() : spanishTmdb.supportsTvShows())) {
+                return spanishTmdb;
+            }
+            Provider englishTmdb = ProviderRegistry.get("tmdb-en");
+            if (englishTmdb != null && (movies ? englishTmdb.supportsMovies() : englishTmdb.supportsTvShows())) {
+                return englishTmdb;
+            }
         }
         for (Provider p : providers) {
             if (p instanceof M3uLiveProvider || p instanceof TmdbProvider) continue;
@@ -374,6 +382,8 @@ final class MainFrame extends JFrame {
             updatingProviderBox = false;
         }
 
+        boolean liveCatalog = mode == Mode.LIVE || (mode == Mode.SEARCH && provider instanceof M3uLiveProvider);
+        sourceLabel.setText(liveCatalog ? "Lista" : "Catálogo");
         sourceWrap.setVisible(mode == Mode.MOVIES || mode == Mode.SERIES || mode == Mode.LIVE || mode == Mode.SEARCH);
     }
 

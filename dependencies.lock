@@ -1,4 +1,6 @@
 # Relative path under lib | SHA-256 | Maven Central URL
+ui/jna-5.19.1.jar|4fb141dd8ef6b0585ffceea4bc49602fbc6312fa977e2c488794ea3e6aafecae|https://repo.maven.apache.org/maven2/net/java/dev/jna/jna/5.19.1/jna-5.19.1.jar
+ui/jna-platform-5.19.1.jar|3b3864f5b449e9c3c24b16861524b622b086563f44e0cd8384c8efc5a6052f82|https://repo.maven.apache.org/maven2/net/java/dev/jna/jna-platform/5.19.1/jna-platform-5.19.1.jar
 ui/flatlaf-3.7.2.jar|917aff3963c88d797d0fd9b9ccbd70f7681c101df9d11c59e2bc7a3a6c0fabf4|https://repo.maven.apache.org/maven2/com/formdev/flatlaf/3.7.2/flatlaf-3.7.2.jar
 html/jsoup-1.19.1.jar|7b850eb00f2f77f606a343b2e4effe4107f3c1faa183729d85fbe16baf606096|https://repo.maven.apache.org/maven2/org/jsoup/jsoup/1.19.1/jsoup-1.19.1.jar
 imageio/imageio-webp-3.12.0.jar|43dc447ccfe34c5c5c6f5d31190270e1f9bf65f60375d697ae2a8ff433468526|https://repo.maven.apache.org/maven2/com/twelvemonkeys/imageio/imageio-webp/3.12.0/imageio-webp-3.12.0.jar
