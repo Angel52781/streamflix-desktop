@@ -116,7 +116,8 @@ final class PlaybackSettings {
             return new LinkedHashMap<>(Json.object(parsed));
         } catch (NoSuchFileException ignored) {
             return new LinkedHashMap<>();
-        } catch (IOException | RuntimeException ignored) {
+        } catch (IOException | RuntimeException ex) {
+            AppLog.warn("settings", "settings.json no pudo leerse para preferencias.", ex);
             return new LinkedHashMap<>();
         }
     }
@@ -134,7 +135,8 @@ final class PlaybackSettings {
             } catch (AtomicMoveNotSupportedException ex) {
                 Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
             }
-        } catch (IOException ignored) {
+        } catch (IOException ex) {
+            AppLog.warn("settings", "No se pudieron guardar preferencias.", ex);
         } finally {
             if (temp != null) {
                 try { Files.deleteIfExists(temp); } catch (IOException ignored) {}

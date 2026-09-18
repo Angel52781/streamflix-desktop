@@ -73,7 +73,9 @@ public class UserData {
                     if (item != null) favorites.add(item);
                 }
             }
-        } catch (Exception ignored) { }
+        } catch (Exception ex) {
+            AppLog.warn("userdata", "No se pudieron cargar favoritos.", ex);
+        }
     }
 
     private static void loadHistory() {
@@ -105,7 +107,9 @@ public class UserData {
                     }
                 }
             }
-        } catch (Exception ignored) { }
+        } catch (Exception ex) {
+            AppLog.warn("userdata", "No se pudo cargar el historial.", ex);
+        }
     }
 
     private static void saveFavorites() {
@@ -115,7 +119,9 @@ public class UserData {
                 out.add(serializeShowItem(item));
             }
             writeAtomically(FAVORITES_FILE, Json.stringify(out));
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            AppLog.warn("userdata", "No se pudieron guardar favoritos.", ex);
+        }
     }
 
     private static void saveHistory() {
@@ -134,7 +140,9 @@ public class UserData {
                 out.add(map);
             }
             writeAtomically(HISTORY_FILE, Json.stringify(out));
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            AppLog.warn("userdata", "No se pudo guardar el historial.", ex);
+        }
     }
 
     private static void writeAtomically(Path target, String content) throws IOException {

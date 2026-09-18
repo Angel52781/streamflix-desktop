@@ -35,6 +35,14 @@ $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
 $hashLine = "$hash *$zipName"
 Set-Content -Path (Join-Path $PSScriptRoot "dist\$zipName.sha256") -Value $hashLine
 
+# Stable asset names keep the README latest-download URL and in-app updater independent of version.
+$stableZipName = 'StreamflixDesktop-windows.zip'
+$stableZipPath = Join-Path $PSScriptRoot "dist\$stableZipName"
+Copy-Item -LiteralPath $zipPath -Destination $stableZipPath -Force
+$stableHashLine = "$hash *$stableZipName"
+Set-Content -Path (Join-Path $PSScriptRoot "dist\$stableZipName.sha256") -Value $stableHashLine
+
 Write-Host "Release created successfully:"
-Write-Host "  ZIP: dist\$zipName"
-Write-Host "  SHA: dist\$zipName.sha256 ($hash)"
+Write-Host "  Versioned ZIP: dist\$zipName"
+Write-Host "  Stable ZIP:    dist\$stableZipName"
+Write-Host "  SHA-256:       $hash"

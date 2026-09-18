@@ -160,6 +160,19 @@ final class SelfTest {
             throw new IllegalStateException("version mismatch: manifest=" + implementation + " file=" + packaged);
         }
         report.append("packaged_version_file=").append(packaged).append(" OK\n");
+
+        if (!PortableUpdater.canSelfUpdate()) {
+            throw new IllegalStateException("portable updater cannot replace this app image");
+        }
+        report.append("portable_updater=OK\n");
+
+        Path mpvNotices = appDir.resolve("third_party").resolve("mpv");
+        for (String required : List.of("Copyright", "LICENSE.GPL", "LICENSE.LGPL", "SOURCE.txt")) {
+            if (!Files.isRegularFile(mpvNotices.resolve(required))) {
+                throw new IllegalStateException("packaged mpv notice missing: " + required);
+            }
+        }
+        report.append("mpv_notices=OK\n");
     }
 
     private static String testProviderBounded(Provider provider, ExtractorRegistry registry) throws Exception {

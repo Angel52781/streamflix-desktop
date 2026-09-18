@@ -48,7 +48,7 @@ $manifest = "Manifest-Version: 1.0`nMain-Class: dev.streamflix.desktop.App`nImpl
 [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'build\MANIFEST.MF'), $manifest, (New-Object Text.UTF8Encoding $false))
 Invoke-Checked $jar @('--create','--file','build\streamflix-desktop.jar','--date=2020-01-01T00:00:00Z','--manifest','build\MANIFEST.MF','-C','build\classes','.')
 Invoke-Checked $javac (@('--release','17','-encoding','UTF-8','-cp',("build\classes;" + $depCp),'-d','build\test-classes') + $tests)
-foreach ($test in @('JsonTest','ProviderFixtureTest','TmdbFixtureTest','M3uPlaylistTest','M3uLiveProviderTest','ExtractorFixtureTest','DependencySmokeTest','UserDataTest','MpvPlayerTest','PlaybackFallbackTest','PlaybackServerStatsTest')) {
+foreach ($test in @('JsonTest','ProviderFixtureTest','TmdbFixtureTest','M3uPlaylistTest','M3uLiveProviderTest','ExtractorFixtureTest','DependencySmokeTest','UserDataTest','MpvPlayerTest','PlaybackFallbackTest','PlaybackServerStatsTest','UpdateServiceTest','ImageDiskCacheTest','DiagnosticsTest')) {
     Invoke-Checked $java @('-cp','build\streamflix-desktop.jar;build\test-classes',"dev.streamflix.desktop.$test")
 }
 Write-Host 'JAR OK: build\streamflix-desktop.jar (keep sibling build\lib directory)'
@@ -86,6 +86,15 @@ Copy-Item -LiteralPath $mpvExe -Destination (Join-Path $mpvDest 'mpv.exe')
 Get-ChildItem -LiteralPath $mpvSource -File | Where-Object {
     $_.Extension -eq '.dll' -or $_.Name -eq 'mpv.com' -or $_.Name -match '^(LICENSE|COPYING|Copyright)'
 } | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $mpvDest }
+
+$mpvLicenseSource = Join-Path $PSScriptRoot 'third_party\mpv'
+$mpvLicenseDest = Join-Path $PSScriptRoot 'dist\StreamflixDesktop\third_party\mpv'
+if (-not (Test-Path -LiteralPath $mpvLicenseSource -PathType Container)) {
+    throw 'Pinned mpv license/source metadata missing: third_party\mpv'
+}
+New-Item $mpvLicenseDest -ItemType Directory -Force | Out-Null
+Copy-Item -Path (Join-Path $mpvLicenseSource '*') -Destination $mpvLicenseDest -Force
+
 foreach ($file in @('LICENSE','THIRD_PARTY_NOTICES.md','VERSION','dependencies.lock')) {
     Copy-Item -LiteralPath $file -Destination dist\StreamflixDesktop
 }

@@ -1,0 +1,12 @@
+Bundled runtime: mpv v0.41.0-1012-ge8673660a
+mpv source commit: e8673660ab
+Source repository: https://github.com/mpv-player/mpv/tree/e8673660ab
+Windows binary archive:
+https://sourceforge.net/projects/mpv-player-windows/files/64bit/mpv-x86_64-20260830-git-e8673660ab.7z/download
+Archive SHA-256:
+464AB69B2248E7B592F0C27A927FFD1F016F7FA2D6D8B46B1A98254C5F2B670A
+
+The included mpv Copyright, LICENSE.GPL and LICENSE.LGPL files are copied
+verbatim from the matching mpv source commit. The effective license of a
+particular binary can also depend on its build configuration and linked
+libraries; verify corresponding-source obligations before public redistribution.
