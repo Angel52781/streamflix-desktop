@@ -14,7 +14,7 @@ You can also browse versioned releases and checksums on the [GitHub Releases pag
 
 Version: **1.2.0**
 
-The `main` branch currently contains **1.3.4**. Development is preparing **1.3.5**, focused on GitHub-based updates, persistent image caching, diagnostics and release hardening.
+The current source tree is versioned **1.3.5**, focused on GitHub-based updates, persistent image caching, diagnostics and release hardening. The latest public GitHub release remains **1.2.0** until the next release is published.
 
 ### Core experience
 
