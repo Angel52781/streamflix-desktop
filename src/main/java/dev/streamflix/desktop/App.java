@@ -5,6 +5,9 @@ import java.util.Arrays;
 
 public final class App {
     public static void main(String[] args) {
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) ->
+                AppLog.error("uncaught", "Error no controlado en " + thread.getName(), error));
+        AppLog.info("app", "Iniciando Streamflix " + AppVersion.current());
         Runtime.getRuntime().addShutdownHook(new Thread(MpvPlayer::shutdown, "mpv-shutdown"));
         if (Arrays.asList(args).contains("--live-self-test")) {
             System.exit(SelfTest.runLive());
@@ -21,6 +24,8 @@ public final class App {
                 frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
             }
             frame.setVisible(true);
+            MpvBootstrap.ensureReady(frame);
+            UpdateService.checkAndPrompt(frame, false);
         });
     }
 }

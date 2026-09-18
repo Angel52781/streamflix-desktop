@@ -8,6 +8,7 @@ public final class UserDataTest {
     public static void main(String[] args) throws Exception {
         Path testDir = Files.createTempDirectory("streamflix-userdata-test-");
         System.setProperty("streamflix.data.dir", testDir.toString());
+        System.setProperty("streamflix.log.dir", testDir.resolve("logs").toString());
         try {
             setup();
             testProviderNamespacing();
@@ -27,8 +28,13 @@ public final class UserDataTest {
             System.out.println("UserDataTest OK");
         } finally {
             UserData.clearForTests();
-            Files.deleteIfExists(testDir);
+            try (var walk = Files.walk(testDir)) {
+                for (Path path : walk.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(path);
+                }
+            }
             System.clearProperty("streamflix.data.dir");
+            System.clearProperty("streamflix.log.dir");
         }
     }
 

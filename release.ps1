@@ -20,6 +20,23 @@ if ($process.ExitCode -ne 0) {
 }
 Write-Host "Self-test passed."
 
+# The public Streamflix archive does not redistribute mpv. The app provisions the
+# pinned upstream runtime on first launch into %LOCALAPPDATA% after SHA-256 verification.
+$bundledMpvDir = Join-Path $PSScriptRoot 'dist\StreamflixDesktop\tools\mpv'
+if (Test-Path -LiteralPath $bundledMpvDir) {
+    Remove-Item -LiteralPath $bundledMpvDir -Recurse -Force
+}
+if (Test-Path -LiteralPath (Join-Path $bundledMpvDir 'mpv.exe')) {
+    throw 'Bundled mpv remained in the public release image'
+}
+$mpvNoticeDir = Join-Path $PSScriptRoot 'dist\StreamflixDesktop\third_party\mpv'
+foreach ($notice in @('Copyright','LICENSE.GPL','LICENSE.LGPL','SOURCE.txt')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $mpvNoticeDir $notice) -PathType Leaf)) {
+        throw "Public package is missing mpv provenance/license notice: $notice"
+    }
+}
+Write-Host "Public package prepared without bundled mpv; first launch will provision it upstream."
+
 $zipName = "StreamflixDesktop-$version-windows.zip"
 $zipPath = Join-Path $PSScriptRoot "dist\$zipName"
 
@@ -30,11 +47,40 @@ if (Test-Path -LiteralPath $zipPath) {
 Write-Host "Compressing to $zipName..."
 Compress-Archive -Path (Join-Path $PSScriptRoot 'dist\StreamflixDesktop') -DestinationPath $zipPath -Force
 
+# Verify the final archive, not only the staging directory.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archiveCheck = [IO.Compression.ZipFile]::OpenRead($zipPath)
+try {
+    $mpvBinaryEntries = @($archiveCheck.Entries | Where-Object {
+        $_.FullName -match '(^|[\\/])mpv\.exe$' -or $_.FullName -match 'tools[\\/]mpv[\\/]'
+    })
+    $mpvNoticeEntries = @($archiveCheck.Entries | Where-Object {
+        $_.FullName -match 'third_party[\\/]mpv[\\/](Copyright|LICENSE\.GPL|LICENSE\.LGPL|SOURCE\.txt)$'
+    })
+    if ($mpvBinaryEntries.Count -ne 0) {
+        throw 'Public ZIP unexpectedly contains the mpv runtime'
+    }
+    if ($mpvNoticeEntries.Count -ne 4) {
+        throw "Public ZIP contains $($mpvNoticeEntries.Count)/4 required mpv notice files"
+    }
+} finally {
+    $archiveCheck.Dispose()
+}
+Write-Host "Public ZIP layout verified: mpv binary absent, notices present."
+
 Write-Host "Calculating SHA-256..."
 $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
 $hashLine = "$hash *$zipName"
 Set-Content -Path (Join-Path $PSScriptRoot "dist\$zipName.sha256") -Value $hashLine
 
+# Stable asset names keep the README latest-download URL and in-app updater independent of version.
+$stableZipName = 'StreamflixDesktop-windows.zip'
+$stableZipPath = Join-Path $PSScriptRoot "dist\$stableZipName"
+Copy-Item -LiteralPath $zipPath -Destination $stableZipPath -Force
+$stableHashLine = "$hash *$stableZipName"
+Set-Content -Path (Join-Path $PSScriptRoot "dist\$stableZipName.sha256") -Value $stableHashLine
+
 Write-Host "Release created successfully:"
-Write-Host "  ZIP: dist\$zipName"
-Write-Host "  SHA: dist\$zipName.sha256 ($hash)"
+Write-Host "  Versioned ZIP: dist\$zipName"
+Write-Host "  Stable ZIP:    dist\$stableZipName"
+Write-Host "  SHA-256:       $hash"

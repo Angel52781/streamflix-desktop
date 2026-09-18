@@ -1,0 +1,55 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify tag matches VERSION
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $expectedTag = "v$version"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "Tag $env:GITHUB_REF_NAME does not match VERSION $version"
+          }
+      - name: Prepare pinned mpv
+        shell: pwsh
+        run: .\setup-mpv.ps1
+
+      - name: Build release and run packaged self-test
+        shell: pwsh
+        run: .\release.ps1
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $version = (Get-Content VERSION -Raw).Trim()
+          $assets = @(
+            "dist\StreamflixDesktop-windows.zip",
+            "dist\StreamflixDesktop-windows.zip.sha256",
+            "dist\StreamflixDesktop-$version-windows.zip",
+            "dist\StreamflixDesktop-$version-windows.zip.sha256"
+          )
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @assets --clobber
+          } else {
+            gh release create $tag @assets --title "Streamflix Desktop $tag" --generate-notes
+          }

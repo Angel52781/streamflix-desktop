@@ -460,6 +460,18 @@ final class SettingsDialog extends JDialog {
                 "https://github.com/Angel52781/streamflix-desktop",
                 "No pude abrir el repositorio."));
         about.add(github);
+        about.add(Box.createVerticalStrut(8));
+
+        JButton updates = Theme.button("Buscar actualizaciones");
+        updates.setAlignmentX(Component.LEFT_ALIGNMENT);
+        updates.addActionListener(e -> UpdateService.checkAndPrompt(this, true));
+        about.add(updates);
+        about.add(Box.createVerticalStrut(8));
+
+        JButton diagnostics = Theme.button("Exportar diagnóstico");
+        diagnostics.setAlignmentX(Component.LEFT_ALIGNMENT);
+        diagnostics.addActionListener(e -> Diagnostics.chooseAndExport(this));
+        about.add(diagnostics);
 
         wrapper.add(about, BorderLayout.NORTH);
         return wrapper;

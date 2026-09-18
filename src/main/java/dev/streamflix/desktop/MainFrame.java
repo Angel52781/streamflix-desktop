@@ -1076,11 +1076,14 @@ final class MainFrame extends JFrame {
                 .toList();
     }
 
-    private static List<Models.ShowItem> safeLoad(Loader loader, int limit) {
+    private static List<Models.ShowItem> safeLoad(
+            Provider source, Loader loader, int limit) {
         try {
             List<Models.ShowItem> items = loader.load();
             return items.stream().limit(limit).toList();
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            AppLog.warn("catalog",
+                    "Falló la carga de " + (source == null ? "provider desconocido" : source.id()), ex);
             return List.of();
         }
     }
@@ -1088,7 +1091,7 @@ final class MainFrame extends JFrame {
     private static CompletableFuture<List<Models.ShowItem>> loadAsync(
             Provider source, Loader loader, int limit) {
         return CompletableFuture.supplyAsync(() ->
-                withSource(source, safeLoad(loader, limit)));
+                withSource(source, safeLoad(source, loader, limit)));
     }
 
     private static CompletableFuture<HomeShelf> loadShelfAsync(

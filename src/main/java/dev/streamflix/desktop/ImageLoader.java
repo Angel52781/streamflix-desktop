@@ -58,7 +58,7 @@ final class ImageLoader {
                 BufferedImage retina = fit(source, width * 2, height * 2);
                 return new ImageIcon(new BaseMultiResolutionImage(base, retina));
             } catch (Throwable ex) {
-                System.err.println("Image load failed: " + url + " :: " + ex.getMessage());
+                AppLog.warn("images", "No se pudo cargar " + url, ex);
                 return null;
             }
         }, POOL).whenComplete((icon, error) -> SwingUtilities.invokeLater(() -> {
@@ -91,7 +91,7 @@ final class ImageLoader {
                 RAW_CACHE.put(url, image);
                 return image;
             } catch (Throwable ex) {
-                System.err.println("Image load failed: " + url + " :: " + ex.getMessage());
+                AppLog.warn("images", "No se pudo cargar " + url, ex);
                 return null;
             }
         }, POOL).whenComplete((image, error) -> SwingUtilities.invokeLater(() ->
@@ -99,6 +99,13 @@ final class ImageLoader {
     }
 
     static BufferedImage download(String url) throws Exception {
+        byte[] cached = ImageDiskCache.read(url);
+        if (cached != null) {
+            BufferedImage source = ImageIO.read(new ByteArrayInputStream(cached));
+            if (source != null) return source;
+            ImageDiskCache.invalidate(url);
+        }
+
         byte[] bytes;
         try {
             bytes = HTTP.getBytes(url);
@@ -112,6 +119,7 @@ final class ImageLoader {
         if (source == null) {
             throw new IllegalStateException("No ImageIO decoder available for " + url);
         }
+        ImageDiskCache.write(url, bytes);
         return source;
     }
 

@@ -336,6 +336,11 @@ final class MpvPlayer {
                 if (Files.isRegularFile(bundled)) return bundled.toString();
             }
         }
+        Path managed = MpvBootstrap.executablePath();
+        if (MpvBootstrap.managedRuntimeReady() && Files.isRegularFile(managed)) {
+            return managed.toString();
+        }
+
         List<String> candidates = List.of(
                 "tools" + File.separator + "mpv" + File.separator + (isWindows() ? "mpv.exe" : "mpv"),
                 "C:\\Program Files\\mpv\\mpv.exe",
