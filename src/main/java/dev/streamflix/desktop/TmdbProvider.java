@@ -10,6 +10,8 @@ import java.util.TreeSet;
 /** TMDb metadata provider with desktop playback routes. */
 final class TmdbProvider implements Provider {
     private final TmdbClient client;
+    private final java.util.concurrent.ConcurrentHashMap<String, Models.ShowItem> detailCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     TmdbProvider(String language) { this(new TmdbClient(language)); }
     TmdbProvider(TmdbClient client) { this.client = client; }
@@ -52,10 +54,140 @@ final class TmdbProvider implements Provider {
     }
 
     @Override public List<Models.ShowItem> search(String query, int page) throws Exception {
+        return bilingualSearch("search/multi", null, query, page);
+    }
+
+    List<Models.ShowItem> searchMovies(String query, int page) throws Exception {
+        return bilingualSearch("search/movie", "movie", query, page);
+    }
+
+    List<Models.ShowItem> searchTv(String query, int page) throws Exception {
         checkPage(page);
         if (query == null || query.isBlank()) return List.of();
-        return mapListing(client.get("search/multi", Map.of("page", Integer.toString(page),
-                "query", query.strip(), "include_adult", "false")), null);
+
+        String normalized = TmdbTitleIndex.normalize(query);
+        boolean shortIncremental = page == 1
+                && normalized.length() >= 3
+                && normalized.length() <= 4;
+
+        List<Models.ShowItem> apiResults = shortIncremental
+                ? preferredLanguageSearch("search/tv", "tv", query, page)
+                : bilingualSearch("search/tv", "tv", query, page);
+
+        if (page != 1) return apiResults;
+        if (!shortIncremental && hasDirectTitlePrefix(apiResults, normalized)) {
+            return apiResults;
+        }
+        return mergeTvPrefixResults(query, apiResults);
+    }
+
+    private List<Models.ShowItem> mergeTvPrefixResults(
+            String query, List<Models.ShowItem> apiResults) {
+        List<TmdbTitleIndex.Match> prefixMatches =
+                TmdbTitleIndex.searchTv(query, 4);
+        if (prefixMatches.isEmpty()) return apiResults;
+
+        LinkedHashMap<String, Models.ShowItem> apiById = new LinkedHashMap<>();
+        for (Models.ShowItem item : apiResults) apiById.put(item.id(), item);
+
+        LinkedHashMap<String, Models.ShowItem> merged = new LinkedHashMap<>();
+        for (TmdbTitleIndex.Match match : prefixMatches) {
+            String itemId = "tmdb:tv:" + match.id();
+            Models.ShowItem item = apiById.get(itemId);
+            if (item == null) {
+                try {
+                    item = details("tv", match.id());
+                } catch (Exception ex) {
+                    AppLog.warn("tmdb-search",
+                            "No se pudo resolver candidato local de serie " + match.id(), ex);
+                }
+            }
+            if (item != null) merged.putIfAbsent(item.id(), item);
+        }
+        for (Models.ShowItem item : apiResults) {
+            merged.putIfAbsent(item.id(), item);
+        }
+        return List.copyOf(merged.values());
+    }
+
+    private static boolean hasDirectTitlePrefix(
+            List<Models.ShowItem> items, String normalizedQuery) {
+        if (normalizedQuery == null || normalizedQuery.length() < 3) return false;
+        for (Models.ShowItem item : items) {
+            if (TmdbTitleIndex.prefixQuality(
+                    TmdbTitleIndex.normalize(item.title()), normalizedQuery) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<Models.ShowItem> preferredLanguageSearch(
+            String path, String fixedType, String query, int page) throws Exception {
+        Map<String, String> parameters = Map.of(
+                "page", Integer.toString(page),
+                "query", query.strip(),
+                "include_adult", "false");
+        return mapListing(client.get(path, parameters), fixedType);
+    }
+
+    private List<Models.ShowItem> bilingualSearch(
+            String path, String fixedType, String query, int page) throws Exception {
+        checkPage(page);
+        if (query == null || query.isBlank()) return List.of();
+
+        String cleaned = query.strip();
+        Map<String, String> parameters = Map.of(
+                "page", Integer.toString(page),
+                "query", cleaned,
+                "include_adult", "false");
+
+        LinkedHashMap<String, Models.ShowItem> merged = new LinkedHashMap<>();
+        for (Models.ShowItem item : mapListing(
+                client.get(path, parameters), fixedType)) {
+            merged.putIfAbsent(item.id(), item);
+        }
+
+        String fallbackLanguage =
+                client.language().startsWith("es") ? "en-US" : "es-ES";
+        TmdbClient fallback = client.withLanguage(fallbackLanguage);
+        for (Models.ShowItem item : mapListing(
+                fallback.get(path, parameters), fixedType)) {
+            merged.putIfAbsent(item.id(), item);
+        }
+        return List.copyOf(merged.values());
+    }
+
+    private Models.ShowItem details(String mediaType, int remoteId) throws Exception {
+        if (!mediaType.equals("movie") && !mediaType.equals("tv")) {
+            throw new IllegalArgumentException("Unsupported TMDb media type");
+        }
+        String cacheKey = client.language() + "|" + mediaType + "|" + remoteId;
+        Models.ShowItem cached = detailCache.get(cacheKey);
+        if (cached != null) return cached;
+
+        Map<String, Object> value =
+                client.get(mediaType + "/" + remoteId, Map.of());
+        boolean movie = mediaType.equals("movie");
+        String title = text(value, movie ? "title" : "name");
+        if (title.isBlank()) {
+            title = text(value, movie ? "original_title" : "original_name");
+        }
+        if (title.isBlank()) return null;
+        Models.ShowItem item = new Models.ShowItem(
+                "tmdb:" + mediaType + ":" + remoteId,
+                mediaType + "/" + remoteId,
+                title,
+                text(value, "overview"),
+                text(value, movie ? "release_date" : "first_air_date"),
+                nonNegativeInteger(value.get("runtime")),
+                Json.decimal(value.get("vote_average")),
+                image(value.get("poster_path"), "w780"),
+                image(value.get("backdrop_path"), "w1280"),
+                movie ? Models.ShowType.MOVIE : Models.ShowType.TV_SHOW,
+                id());
+        detailCache.put(cacheKey, item);
+        return item;
     }
 
     private List<Models.ShowItem> mapListing(Map<String, Object> root, String fixedType) throws TmdbException {

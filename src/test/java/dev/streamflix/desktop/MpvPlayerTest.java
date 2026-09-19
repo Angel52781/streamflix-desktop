@@ -25,6 +25,7 @@ public final class MpvPlayerTest {
             testPlaybackNetworkProfile();
             testProgrammaticTimelineRefreshDoesNotSeek();
             testPlayerChromeOverlayKeepsMediaStable();
+            testPlayerWindowBoundsStayInsideWorkArea();
             testImmediateFailureRejected();
             testNewPlaybackStopsPrevious();
             testStaleRequestCannotReplaceNewerIntent();
@@ -154,6 +155,28 @@ public final class MpvPlayerTest {
                 "hiding player chrome must never resize the video surface");
         require(before.equals(new java.awt.Rectangle(0, 0, 1920, 1080)),
                 "video surface always occupies the full player area");
+    }
+
+    private static void testPlayerWindowBoundsStayInsideWorkArea() {
+        java.awt.Rectangle work = new java.awt.Rectangle(0, 0, 1366, 728);
+        java.awt.Dimension minimum = new java.awt.Dimension(760, 460);
+
+        java.awt.Rectangle fitted = EmbeddedPlayerWindow.fitBoundsToWorkArea(
+                new java.awt.Rectangle(-120, 40, 1320, 820), work, minimum);
+        require(fitted.x >= work.x && fitted.y >= work.y,
+                "player window top-left remains inside usable work area");
+        require(fitted.x + fitted.width <= work.x + work.width,
+                "player window right edge remains inside usable work area");
+        require(fitted.y + fitted.height <= work.y + work.height,
+                "player window bottom edge stays above Windows taskbar");
+        require(fitted.width >= minimum.width && fitted.height >= minimum.height,
+                "player window preserves normal minimum size when screen allows it");
+
+        java.awt.Rectangle smallWork = new java.awt.Rectangle(100, 50, 640, 360);
+        java.awt.Rectangle small = EmbeddedPlayerWindow.fitBoundsToWorkArea(
+                new java.awt.Rectangle(0, 0, 1320, 820), smallWork, minimum);
+        require(small.equals(smallWork),
+                "small screens clamp player to the complete usable work area");
     }
 
     private static void testImmediateFailureRejected() throws Exception {

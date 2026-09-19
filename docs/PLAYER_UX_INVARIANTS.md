@@ -26,3 +26,19 @@ Preferred audio/subtitle languages are applied after mpv exposes track-list.
 A requested Spanish subtitle may match es/spa/Spanish/Español/Castellano/Latino aliases.
 If no requested subtitle language exists, subtitles are disabled instead of choosing
 an unrelated forced/default track.
+
+
+## 4. Windowed player must respect the usable Windows desktop
+
+The normal pop-out player must fit inside the monitor work area after taskbar insets.
+It must never rely on a fixed 1320x820 rectangle that can extend behind the Windows taskbar.
+
+Windowed playback supports:
+- drag-to-move from the player title area;
+- edge/corner resize while remaining inside the current monitor work area;
+- maximize/restore against the usable work area, not raw screen bounds;
+- minimize;
+- Pin/Fijado always-on-top mode;
+- Mini mode anchored near the lower-right usable corner and always on top.
+
+Critical controls (play/pause, mute and fullscreen) remain visible at every supported responsive size.
