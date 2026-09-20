@@ -48,7 +48,7 @@ $manifest = "Manifest-Version: 1.0`nMain-Class: dev.streamflix.desktop.App`nImpl
 [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'build\MANIFEST.MF'), $manifest, (New-Object Text.UTF8Encoding $false))
 Invoke-Checked $jar @('--create','--file','build\streamflix-desktop.jar','--date=2020-01-01T00:00:00Z','--manifest','build\MANIFEST.MF','-C','build\classes','.')
 Invoke-Checked $javac (@('--release','17','-encoding','UTF-8','-cp',("build\classes;" + $depCp),'-d','build\test-classes') + $tests)
-foreach ($test in @('JsonTest','ProviderFixtureTest','TmdbFixtureTest','TmdbTitleIndexTest','M3uPlaylistTest','M3uLiveProviderTest','ExtractorFixtureTest','DependencySmokeTest','UserDataTest','MpvPlayerTest','MainFrameSearchTest','PlaybackFallbackTest','PlaybackServerStatsTest','UpdateServiceTest','ImageDiskCacheTest','DiagnosticsTest','MpvBootstrapTest')) {
+foreach ($test in @('JsonTest','ProviderFixtureTest','TmdbFixtureTest','TmdbTitleIndexTest','M3uPlaylistTest','M3uLiveProviderTest','ExtractorFixtureTest','DependencySmokeTest','UserDataTest','MpvPlayerTest','MainFrameSearchTest','PlaybackFallbackTest','PlaybackRecoveryTest','SubtitleAggregatorTest','PlaybackServerStatsTest','UpdateServiceTest','ImageDiskCacheTest','DiagnosticsTest','MpvBootstrapTest')) {
     Invoke-Checked $java @('-cp','build\streamflix-desktop.jar;build\test-classes',"dev.streamflix.desktop.$test")
 }
 Write-Host 'JAR OK: build\streamflix-desktop.jar (keep sibling build\lib directory)'
@@ -70,13 +70,19 @@ Invoke-Checked $jpackage @('--version')
 New-Item build\package -ItemType Directory -Force | Out-Null
 Copy-Item build\streamflix-desktop.jar build\package
 Copy-Item build\lib build\package -Recurse
+$runtimeImage = [IO.Path]::GetFullPath((Split-Path $javaBin -Parent))
+$distAppImage = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'dist\StreamflixDesktop'))
+if ($runtimeImage.StartsWith($distAppImage + '\', [StringComparison]::OrdinalIgnoreCase) -or
+    $runtimeImage.Equals($distAppImage, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'STREAMFLIX_JDK/runtime-image cannot live inside dist\StreamflixDesktop because packaging recreates that directory.'
+}
 Clear-BuildDirectory 'dist\StreamflixDesktop'
 Invoke-Checked $jpackage @(
     '--type','app-image','--name','StreamflixDesktop','--input','build\package',
     '--main-jar','streamflix-desktop.jar','--main-class','dev.streamflix.desktop.App',
     '--dest','dist','--description','Streamflix Desktop',
     '--vendor','Streamflix Desktop Community Port','--app-version',$version,
-    '--runtime-image',(Split-Path $javaBin -Parent)
+    '--runtime-image',$runtimeImage
 )
 $mpvSource = Split-Path ([IO.Path]::GetFullPath($mpvExe)) -Parent
 $mpvDest = Join-Path $PSScriptRoot 'dist\StreamflixDesktop\tools\mpv'
