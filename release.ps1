@@ -21,7 +21,8 @@ if ($process.ExitCode -ne 0) {
 Write-Host "Self-test passed."
 
 # The public Streamflix archive does not redistribute mpv. The app provisions the
-# pinned upstream runtime on first launch into %LOCALAPPDATA% after SHA-256 verification.
+# pinned upstream runtime on the first playback attempt that needs it, placing it in
+# %LOCALAPPDATA% after SHA-256 verification.
 $bundledMpvDir = Join-Path $PSScriptRoot 'dist\StreamflixDesktop\tools\mpv'
 if (Test-Path -LiteralPath $bundledMpvDir) {
     Remove-Item -LiteralPath $bundledMpvDir -Recurse -Force
@@ -35,10 +36,11 @@ foreach ($notice in @('Copyright','LICENSE.GPL','LICENSE.LGPL','SOURCE.txt')) {
         throw "Public package is missing mpv provenance/license notice: $notice"
     }
 }
-Write-Host "Public package prepared without bundled mpv; first launch will provision it upstream."
+Write-Host "Public package prepared without bundled mpv; the first playback attempt that needs it will provision it upstream."
 
-# Build a normal Windows installer for the primary download. The portable ZIP
-# remains published because the in-app updater consumes it directly.
+# Build a per-user EXE for the primary download and a machine-wide MSI for
+# managed/admin deployment. Both installers use the same validated app image.
+# The portable ZIP remains published because the in-app updater consumes it.
 $jpackage = $env:STREAMFLIX_JPACKAGE
 if (-not $jpackage) {
     $cmd = Get-Command jpackage -ErrorAction SilentlyContinue
@@ -54,9 +56,8 @@ if (Test-Path -LiteralPath $installerStage) {
 }
 New-Item -ItemType Directory -Path $installerStage -Force | Out-Null
 
-Write-Host "Creating Windows installer..."
-& $jpackage @(
-    '--type','exe',
+Write-Host "Creating per-user EXE installer..."
+$commonInstallerArguments = @(
     '--name','StreamflixDesktop',
     '--app-image',(Join-Path $PSScriptRoot 'dist\StreamflixDesktop'),
     '--dest',$installerStage,
@@ -64,30 +65,53 @@ Write-Host "Creating Windows installer..."
     '--vendor','Streamflix Desktop Community Port',
     '--description','Streamflix Desktop for Windows',
     '--license-file',(Join-Path $PSScriptRoot 'LICENSE'),
-    '--win-per-user-install',
     '--win-dir-chooser',
     '--win-menu',
     '--win-menu-group','Streamflix',
     '--win-shortcut'
 )
-if ($LASTEXITCODE -ne 0) { throw "jpackage installer failed with code $LASTEXITCODE" }
+$exeInstallerArguments = @('--type','exe') + $commonInstallerArguments + @('--win-per-user-install')
+& $jpackage @exeInstallerArguments
+if ($LASTEXITCODE -ne 0) { throw "jpackage EXE installer failed with code $LASTEXITCODE" }
 
-$generatedInstallers = @(Get-ChildItem -LiteralPath $installerStage -File -Filter '*.exe')
-if ($generatedInstallers.Count -ne 1) {
-    throw "Expected exactly one installer EXE, found $($generatedInstallers.Count)"
+Write-Host "Creating managed-deployment MSI installer..."
+$msiInstallerArguments = @('--type','msi') + $commonInstallerArguments
+& $jpackage @msiInstallerArguments
+if ($LASTEXITCODE -ne 0) { throw "jpackage MSI installer failed with code $LASTEXITCODE" }
+
+function Publish-InstallerAssets {
+    param([ValidateSet('exe','msi')][string]$Extension)
+
+    $generatedInstallers = @(Get-ChildItem -LiteralPath $installerStage -File -Filter "*.$Extension")
+    if ($generatedInstallers.Count -ne 1) {
+        throw "Expected exactly one installer .$Extension, found $($generatedInstallers.Count)"
+    }
+
+    $versionedName = "StreamflixDesktop-$version-Setup.$Extension"
+    $versionedPath = Join-Path $PSScriptRoot "dist\$versionedName"
+    $stableName = "StreamflixDesktop-Setup.$Extension"
+    $stablePath = Join-Path $PSScriptRoot "dist\$stableName"
+    Copy-Item -LiteralPath $generatedInstallers[0].FullName -Destination $versionedPath -Force
+    Copy-Item -LiteralPath $generatedInstallers[0].FullName -Destination $stablePath -Force
+
+    $hash = (Get-FileHash -LiteralPath $versionedPath -Algorithm SHA256).Hash
+    Set-Content -Path (Join-Path $PSScriptRoot "dist\$versionedName.sha256") -Value "$hash *$versionedName"
+    Set-Content -Path (Join-Path $PSScriptRoot "dist\$stableName.sha256") -Value "$hash *$stableName"
+
+    [PSCustomObject]@{
+        VersionedName = $versionedName
+        StableName = $stableName
+        Hash = $hash
+    }
 }
-$versionedInstallerName = "StreamflixDesktop-$version-Setup.exe"
-$versionedInstallerPath = Join-Path $PSScriptRoot "dist\$versionedInstallerName"
-$stableInstallerName = 'StreamflixDesktop-Setup.exe'
-$stableInstallerPath = Join-Path $PSScriptRoot "dist\$stableInstallerName"
-Copy-Item -LiteralPath $generatedInstallers[0].FullName -Destination $versionedInstallerPath -Force
-Copy-Item -LiteralPath $generatedInstallers[0].FullName -Destination $stableInstallerPath -Force
+
+$exeAssets = Publish-InstallerAssets -Extension 'exe'
+$msiAssets = Publish-InstallerAssets -Extension 'msi'
 Remove-Item -LiteralPath $installerStage -Recurse -Force
 
-$installerHash = (Get-FileHash -LiteralPath $versionedInstallerPath -Algorithm SHA256).Hash
-Set-Content -Path (Join-Path $PSScriptRoot "dist\$versionedInstallerName.sha256") -Value "$installerHash *$versionedInstallerName"
-Set-Content -Path (Join-Path $PSScriptRoot "dist\$stableInstallerName.sha256") -Value "$installerHash *$stableInstallerName"
-Write-Host "Windows installer verified: dist\$versionedInstallerName"
+Write-Host "Windows installers verified:"
+Write-Host "  EXE: dist\$($exeAssets.VersionedName)"
+Write-Host "  MSI: dist\$($msiAssets.VersionedName)"
 
 $zipName = "StreamflixDesktop-$version-windows.zip"
 $zipPath = Join-Path $PSScriptRoot "dist\$zipName"
@@ -133,9 +157,12 @@ $stableHashLine = "$hash *$stableZipName"
 Set-Content -Path (Join-Path $PSScriptRoot "dist\$stableZipName.sha256") -Value $stableHashLine
 
 Write-Host "Release created successfully:"
-Write-Host "  Installer:     dist\$versionedInstallerName"
-Write-Host "  Stable setup:  dist\$stableInstallerName"
-Write-Host "  Installer SHA: $installerHash"
+Write-Host "  Versioned EXE: dist\$($exeAssets.VersionedName)"
+Write-Host "  Stable EXE:    dist\$($exeAssets.StableName)"
+Write-Host "  EXE SHA-256:   $($exeAssets.Hash)"
+Write-Host "  Versioned MSI: dist\$($msiAssets.VersionedName)"
+Write-Host "  Stable MSI:    dist\$($msiAssets.StableName)"
+Write-Host "  MSI SHA-256:   $($msiAssets.Hash)"
 Write-Host "  Versioned ZIP: dist\$zipName"
 Write-Host "  Stable ZIP:    dist\$stableZipName"
 Write-Host "  ZIP SHA-256:   $hash"

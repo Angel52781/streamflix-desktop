@@ -56,10 +56,14 @@ jobs:
           path: |
             dist/StreamflixDesktop-Setup.exe
             dist/StreamflixDesktop-Setup.exe.sha256
+            dist/StreamflixDesktop-Setup.msi
+            dist/StreamflixDesktop-Setup.msi.sha256
             dist/StreamflixDesktop-windows.zip
             dist/StreamflixDesktop-windows.zip.sha256
             dist/StreamflixDesktop-*-Setup.exe
             dist/StreamflixDesktop-*-Setup.exe.sha256
+            dist/StreamflixDesktop-*-Setup.msi
+            dist/StreamflixDesktop-*-Setup.msi.sha256
             dist/StreamflixDesktop-*-windows.zip
             dist/StreamflixDesktop-*-windows.zip.sha256
 
@@ -76,6 +80,10 @@ jobs:
             "dist\StreamflixDesktop-Setup.exe.sha256",
             "dist\StreamflixDesktop-$version-Setup.exe",
             "dist\StreamflixDesktop-$version-Setup.exe.sha256",
+            "dist\StreamflixDesktop-Setup.msi",
+            "dist\StreamflixDesktop-Setup.msi.sha256",
+            "dist\StreamflixDesktop-$version-Setup.msi",
+            "dist\StreamflixDesktop-$version-Setup.msi.sha256",
             "dist\StreamflixDesktop-windows.zip",
             "dist\StreamflixDesktop-windows.zip.sha256",
             "dist\StreamflixDesktop-$version-windows.zip",
