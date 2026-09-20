@@ -37,6 +37,58 @@ foreach ($notice in @('Copyright','LICENSE.GPL','LICENSE.LGPL','SOURCE.txt')) {
 }
 Write-Host "Public package prepared without bundled mpv; first launch will provision it upstream."
 
+# Build a normal Windows installer for the primary download. The portable ZIP
+# remains published because the in-app updater consumes it directly.
+$jpackage = $env:STREAMFLIX_JPACKAGE
+if (-not $jpackage) {
+    $cmd = Get-Command jpackage -ErrorAction SilentlyContinue
+    if ($cmd) { $jpackage = $cmd.Source }
+}
+if (-not $jpackage -or -not (Test-Path -LiteralPath $jpackage -PathType Leaf)) {
+    throw 'jpackage required to create the Windows installer.'
+}
+
+$installerStage = Join-Path $PSScriptRoot 'dist\installer'
+if (Test-Path -LiteralPath $installerStage) {
+    Remove-Item -LiteralPath $installerStage -Recurse -Force
+}
+New-Item -ItemType Directory -Path $installerStage -Force | Out-Null
+
+Write-Host "Creating Windows installer..."
+& $jpackage @(
+    '--type','exe',
+    '--name','StreamflixDesktop',
+    '--app-image',(Join-Path $PSScriptRoot 'dist\StreamflixDesktop'),
+    '--dest',$installerStage,
+    '--app-version',$version,
+    '--vendor','Streamflix Desktop Community Port',
+    '--description','Streamflix Desktop for Windows',
+    '--license-file',(Join-Path $PSScriptRoot 'LICENSE'),
+    '--win-per-user-install',
+    '--win-dir-chooser',
+    '--win-menu',
+    '--win-menu-group','Streamflix',
+    '--win-shortcut'
+)
+if ($LASTEXITCODE -ne 0) { throw "jpackage installer failed with code $LASTEXITCODE" }
+
+$generatedInstallers = @(Get-ChildItem -LiteralPath $installerStage -File -Filter '*.exe')
+if ($generatedInstallers.Count -ne 1) {
+    throw "Expected exactly one installer EXE, found $($generatedInstallers.Count)"
+}
+$versionedInstallerName = "StreamflixDesktop-$version-Setup.exe"
+$versionedInstallerPath = Join-Path $PSScriptRoot "dist\$versionedInstallerName"
+$stableInstallerName = 'StreamflixDesktop-Setup.exe'
+$stableInstallerPath = Join-Path $PSScriptRoot "dist\$stableInstallerName"
+Copy-Item -LiteralPath $generatedInstallers[0].FullName -Destination $versionedInstallerPath -Force
+Copy-Item -LiteralPath $generatedInstallers[0].FullName -Destination $stableInstallerPath -Force
+Remove-Item -LiteralPath $installerStage -Recurse -Force
+
+$installerHash = (Get-FileHash -LiteralPath $versionedInstallerPath -Algorithm SHA256).Hash
+Set-Content -Path (Join-Path $PSScriptRoot "dist\$versionedInstallerName.sha256") -Value "$installerHash *$versionedInstallerName"
+Set-Content -Path (Join-Path $PSScriptRoot "dist\$stableInstallerName.sha256") -Value "$installerHash *$stableInstallerName"
+Write-Host "Windows installer verified: dist\$versionedInstallerName"
+
 $zipName = "StreamflixDesktop-$version-windows.zip"
 $zipPath = Join-Path $PSScriptRoot "dist\$zipName"
 
@@ -81,6 +133,9 @@ $stableHashLine = "$hash *$stableZipName"
 Set-Content -Path (Join-Path $PSScriptRoot "dist\$stableZipName.sha256") -Value $stableHashLine
 
 Write-Host "Release created successfully:"
+Write-Host "  Installer:     dist\$versionedInstallerName"
+Write-Host "  Stable setup:  dist\$stableInstallerName"
+Write-Host "  Installer SHA: $installerHash"
 Write-Host "  Versioned ZIP: dist\$zipName"
 Write-Host "  Stable ZIP:    dist\$stableZipName"
-Write-Host "  SHA-256:       $hash"
+Write-Host "  ZIP SHA-256:   $hash"
