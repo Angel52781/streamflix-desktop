@@ -4,19 +4,19 @@ Streamflix Desktop is a Windows/JVM port of the Streamflix Reborn provider archi
 
 ## Download for Windows
 
-**[Download the latest Streamflix Desktop build](https://github.com/Angel52781/streamflix-desktop/releases/latest/download/StreamflixDesktop-windows.zip)**
+**[Download Streamflix Desktop for Windows (.exe installer)](https://github.com/Angel52781/streamflix-desktop/releases/latest/download/StreamflixDesktop-Setup.exe)**
 
-Extract the ZIP and run `StreamflixDesktop.exe`. The portable package includes the Java runtime. On the first Windows launch, Streamflix downloads the pinned mpv runtime from its upstream GitHub release, verifies its SHA-256, and stores it under `%LOCALAPPDATA%\\Streamflix\\runtime\\mpv`.
+Run `StreamflixDesktop-Setup.exe` and follow the Windows installer. The installer includes the Java runtime. On first playback, Streamflix downloads the pinned mpv runtime from its upstream GitHub release, verifies its SHA-256, and stores it under `%LOCALAPPDATA%\\Streamflix\\runtime\\mpv`.
+
+Prefer a portable copy? **[Download the portable ZIP](https://github.com/Angel52781/streamflix-desktop/releases/latest/download/StreamflixDesktop-windows.zip)**, extract it, and run `StreamflixDesktop.exe`.
 
 You can also browse versioned releases and checksums on the [GitHub Releases page](https://github.com/Angel52781/streamflix-desktop/releases).
 
 ## Current stable release
 
-Version: **1.3.5**
+Version: **1.3.6**
 
-The current stable release is **1.3.5**, adding GitHub-based updates, persistent image caching, diagnostics, hardened Continue Watching/resume behavior, explicit audio/subtitle preferences and a stabilized fullscreen player UI.
-
-Development **1.3.6** improves the pop-out player with work-area-aware sizing, resize/move/maximize controls, Pin/always-on-top and Mini modes, plus scoped, focus-stable search and bilingual TMDb fallback that merges ES/EN results by canonical TMDb ID.
+The current stable release is **1.3.6**, combining the 1.3.5 reliability foundation with the improved pop-out player, work-area-aware sizing, resize/move/maximize controls, Pin/always-on-top and Mini modes, scoped focus-stable search, bilingual TMDb fallback, richer title details/recommendations, playback recovery and hardened subtitle/audio handling.
 
 ### Core experience
 
@@ -101,6 +101,7 @@ Settings includes an in-app step-by-step TMDb setup guide with direct links and 
 - Windows
 - Complete JDK 17+ (java, javac, jar)
 - jpackage
+- WiX Toolset 3.0+ when creating the Windows installer (`release.ps1`)
 - mpv for local packaging/self-test (`tools\\mpv\\mpv.exe` or `STREAMFLIX_MPV`); `.\\setup-mpv.ps1` provisions the pinned build
 
 The build verifies locked dependencies before compilation. Public release ZIPs do **not** redistribute `mpv.exe`; `release.ps1` removes the build-time copy after the packaged self-test, and the application provisions mpv on first launch.
@@ -119,11 +120,11 @@ Output:
 
     .\\build.ps1 -JarOnly
 
-### Create portable release ZIP + SHA-256
+### Create Windows installer + portable release
 
     .\\release.ps1
 
-The release script builds from source, runs the packaged `--self-test`, and creates both versioned and stable-name ZIP/SHA-256 assets. The stable names (`StreamflixDesktop-windows.zip` and `.sha256`) are used by the latest-download link and in-app updater.
+The release script builds from source, runs the packaged `--self-test`, then creates a versioned/stable `.exe` installer and the portable ZIP, each with SHA-256 checksums. `StreamflixDesktop-Setup.exe` is the primary human download. `StreamflixDesktop-windows.zip` remains available as the portable package and is the stable asset consumed by the in-app updater.
 
 ## Deterministic test gates
 
@@ -141,6 +142,8 @@ The build currently runs:
 - UserDataTest
 - MpvPlayerTest
 - PlaybackFallbackTest
+- PlaybackRecoveryTest
+- SubtitleAggregatorTest
 - PlaybackServerStatsTest
 - UpdateServiceTest
 - ImageDiskCacheTest

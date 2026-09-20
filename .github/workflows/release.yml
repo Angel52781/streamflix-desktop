@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -19,6 +20,7 @@ jobs:
           java-version: '17'
 
       - name: Verify tag matches VERSION
+        if: github.event_name == 'push'
         shell: pwsh
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
@@ -30,11 +32,39 @@ jobs:
         shell: pwsh
         run: .\setup-mpv.ps1
 
+      - name: Install WiX Toolset 3
+        shell: pwsh
+        run: |
+          choco install wixtoolset --version=3.14.1.20250415 -y --no-progress
+          if ($LASTEXITCODE -notin @(0, 1641, 3010)) {
+            throw "WiX installation failed with exit code $LASTEXITCODE"
+          }
+          $wixBin = Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset v3.*\bin" -Directory -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $wixBin) { throw 'WiX 3 bin directory not found' }
+          $wixBin.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Build release and run packaged self-test
         shell: pwsh
         run: .\release.ps1
 
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamflix-windows-${{ github.sha }}
+          path: |
+            dist/StreamflixDesktop-Setup.exe
+            dist/StreamflixDesktop-Setup.exe.sha256
+            dist/StreamflixDesktop-windows.zip
+            dist/StreamflixDesktop-windows.zip.sha256
+            dist/StreamflixDesktop-*-Setup.exe
+            dist/StreamflixDesktop-*-Setup.exe.sha256
+            dist/StreamflixDesktop-*-windows.zip
+            dist/StreamflixDesktop-*-windows.zip.sha256
+
       - name: Publish GitHub Release
+        if: github.event_name == 'push'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -42,6 +72,10 @@ jobs:
           $tag = $env:GITHUB_REF_NAME
           $version = (Get-Content VERSION -Raw).Trim()
           $assets = @(
+            "dist\StreamflixDesktop-Setup.exe",
+            "dist\StreamflixDesktop-Setup.exe.sha256",
+            "dist\StreamflixDesktop-$version-Setup.exe",
+            "dist\StreamflixDesktop-$version-Setup.exe.sha256",
             "dist\StreamflixDesktop-windows.zip",
             "dist\StreamflixDesktop-windows.zip.sha256",
             "dist\StreamflixDesktop-$version-windows.zip",
