@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /** In-app title detail route for the streaming navigation flow. */
@@ -19,10 +20,12 @@ final class TitleDetailView extends JPanel {
     private final Models.ShowItem item;
     private final Runnable onBack;
     private final Runnable onHistoryChanged;
+    private final Consumer<Models.ShowItem> onOpenRelated;
     private final boolean autoPlayRequested;
     private final ExtractorRegistry extractors = new ExtractorRegistry();
 
     private final JPanel episodeArea = new JPanel(new BorderLayout());
+    private final JPanel recommendationArea = new JPanel(new BorderLayout());
     private final JLabel status = Theme.muted(" ");
     private volatile List<Models.Episode> episodes = List.of();
 
@@ -36,11 +39,18 @@ final class TitleDetailView extends JPanel {
 
     TitleDetailView(Window owner, Provider provider, Models.ShowItem item, Runnable onBack,
                     boolean autoPlay, Runnable onHistoryChanged) {
+        this(owner, provider, item, onBack, autoPlay, onHistoryChanged, ignored -> {});
+    }
+
+    TitleDetailView(Window owner, Provider provider, Models.ShowItem item, Runnable onBack,
+                    boolean autoPlay, Runnable onHistoryChanged,
+                    Consumer<Models.ShowItem> onOpenRelated) {
         this.owner = owner;
         this.provider = provider;
         this.item = item;
         this.onBack = onBack;
         this.onHistoryChanged = onHistoryChanged == null ? () -> {} : onHistoryChanged;
+        this.onOpenRelated = onOpenRelated == null ? ignored -> {} : onOpenRelated;
         this.autoPlayRequested = autoPlay;
 
         setLayout(new BorderLayout());
@@ -61,6 +71,7 @@ final class TitleDetailView extends JPanel {
                 chooseServerAndPlay(item.providerId(), item.title(), true, null, resumeAt, null);
             });
         }
+        if (provider instanceof TmdbProvider) loadRecommendations();
     }
 
     private JComponent buildBody() {
@@ -71,6 +82,19 @@ final class TitleDetailView extends JPanel {
         JComponent hero = buildHero();
         hero.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(hero);
+
+        if (provider instanceof TmdbProvider) {
+            JPanel recommendationsWrap = new JPanel(new BorderLayout());
+            recommendationsWrap.setOpaque(false);
+            recommendationsWrap.setBorder(new EmptyBorder(18, 40, 8, 40));
+            recommendationArea.setOpaque(false);
+            JLabel loading = Theme.muted("Cargando títulos relacionados…");
+            loading.setBorder(new EmptyBorder(12, 0, 12, 0));
+            recommendationArea.add(loading, BorderLayout.CENTER);
+            recommendationsWrap.add(recommendationArea, BorderLayout.CENTER);
+            recommendationsWrap.setAlignmentX(Component.LEFT_ALIGNMENT);
+            content.add(recommendationsWrap);
+        }
 
         if (item.type() == Models.ShowType.TV_SHOW) {
             JPanel episodesWrap = new JPanel(new BorderLayout());
@@ -93,6 +117,52 @@ final class TitleDetailView extends JPanel {
         scroll.getVerticalScrollBar().setUnitIncrement(30);
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         return scroll;
+    }
+
+    private void loadRecommendations() {
+        new SwingWorker<List<Models.ShowItem>, Void>() {
+            @Override protected List<Models.ShowItem> doInBackground() throws Exception {
+                return ((TmdbProvider) provider).recommendations(item);
+            }
+
+            @Override protected void done() {
+                try {
+                    renderRecommendations(get());
+                } catch (Exception ex) {
+                    recommendationArea.removeAll();
+                    recommendationArea.add(Theme.muted(
+                            "No se pudieron cargar títulos relacionados. Inténtalo de nuevo más tarde."),
+                            BorderLayout.CENTER);
+                    recommendationArea.revalidate();
+                    recommendationArea.repaint();
+                }
+            }
+        }.execute();
+    }
+
+    private void renderRecommendations(List<Models.ShowItem> recommendations) {
+        recommendationArea.removeAll();
+        if (recommendations == null || recommendations.isEmpty()) {
+            recommendationArea.add(Theme.muted("No hay títulos relacionados disponibles."), BorderLayout.CENTER);
+        } else {
+            JPanel rail = new JPanel(new FlowLayout(FlowLayout.LEFT, 14, 0));
+            rail.setOpaque(false);
+            for (Models.ShowItem recommendation : recommendations.stream().limit(12).toList()) {
+                rail.add(new LandscapeCard(recommendation, onOpenRelated));
+            }
+            JPanel section = new JPanel();
+            section.setOpaque(false);
+            section.setLayout(new BoxLayout(section, BoxLayout.Y_AXIS));
+            JLabel heading = Theme.heading("También te puede gustar", 23f);
+            heading.setAlignmentX(Component.LEFT_ALIGNMENT);
+            rail.setAlignmentX(Component.LEFT_ALIGNMENT);
+            section.add(heading);
+            section.add(Box.createVerticalStrut(12));
+            section.add(rail);
+            recommendationArea.add(section, BorderLayout.CENTER);
+        }
+        recommendationArea.revalidate();
+        recommendationArea.repaint();
     }
 
     private JComponent buildHero() {
@@ -257,7 +327,9 @@ final class TitleDetailView extends JPanel {
                 int h = hero.getHeight();
                 background.setBounds(0, 0, w, h);
                 shade.setBounds(0, 0, w, h);
-                copy.setBounds(40, Math.max(76, h - 360), Math.min(780, Math.max(600, w - 140)), 330);
+                int inset = Math.min(40, Math.max(18, w / 18));
+                copy.setBounds(inset, Math.max(54, h - 360),
+                        Math.min(780, Math.max(0, w - inset * 2)), Math.min(330, Math.max(0, h - 90)));
                 back.setBounds(30, 24, 105, 38);
             }
         });
@@ -267,7 +339,9 @@ final class TitleDetailView extends JPanel {
             int h = hero.getHeight();
             background.setBounds(0, 0, w, h);
             shade.setBounds(0, 0, w, h);
-            copy.setBounds(40, Math.max(76, h - 360), Math.min(780, Math.max(600, w - 140)), 330);
+            int inset = Math.min(40, Math.max(18, w / 18));
+            copy.setBounds(inset, Math.max(54, h - 360),
+                    Math.min(780, Math.max(0, w - inset * 2)), Math.min(330, Math.max(0, h - 90)));
             back.setBounds(30, 24, 105, 38);
         });
 
@@ -432,7 +506,7 @@ final class TitleDetailView extends JPanel {
 
         new SwingWorker<List<Models.Server>, Void>() {
             @Override protected List<Models.Server> doInBackground() throws Exception {
-                return provider.servers(providerItemId);
+                return PlaybackRecovery.run(() -> provider.servers(providerItemId));
             }
 
             @Override protected void done() {
@@ -446,7 +520,8 @@ final class TitleDetailView extends JPanel {
 
                     if (autoPlay) {
                         resolveAnyAndPlay(
-                                servers, mediaTitle, playbackRequest, preparingWindow, episode, resumeAtSeconds);
+                                servers, providerItemId, mediaTitle, playbackRequest,
+                                preparingWindow, episode, resumeAtSeconds);
                         return;
                     }
 
@@ -455,17 +530,18 @@ final class TitleDetailView extends JPanel {
                         EmbeddedPlayerWindow player = configuredPlayer(mediaTitle, episode);
                         if (choice.automatic()) {
                             resolveAnyAndPlay(
-                                    servers, mediaTitle, playbackRequest, player, episode, resumeAtSeconds);
+                                    servers, providerItemId, mediaTitle, playbackRequest,
+                                    player, episode, resumeAtSeconds);
                         } else {
                             resolveAndPlay(
-                                    choice.server(), mediaTitle, playbackRequest, player, episode, resumeAtSeconds);
+                                    choice.server(), providerItemId, mediaTitle, playbackRequest,
+                                    player, episode, resumeAtSeconds);
                         }
                     });
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     if (preparingWindow != null) {
-                        preparingWindow.showFailure(cause.getMessage() == null
-                                ? "No se pudo iniciar la reproducción." : cause.getMessage());
+                        preparingWindow.showFailure("No se pudo iniciar la reproducción. Prueba otra fuente.");
                     }
                     status.setText("No se pudo reproducir");
                 }
@@ -494,7 +570,8 @@ final class TitleDetailView extends JPanel {
         return player;
     }
 
-    private void resolveAnyAndPlay(List<Models.Server> servers, String mediaTitle,
+    private void resolveAnyAndPlay(List<Models.Server> servers, String providerItemId,
+                                   String mediaTitle,
                                    long playbackRequest, EmbeddedPlayerWindow player,
                                    Models.Episode episode, double resumeAtSeconds) {
         status.setText("Buscando la mejor fuente…");
@@ -506,15 +583,18 @@ final class TitleDetailView extends JPanel {
                     if (!player.isDisplayable()) throw new CancellationException("Reproductor cerrado.");
                     player.setPreparing("Probando " + server.name() + "…");
                     long startedAt = System.nanoTime();
+                    long[] attemptStartedAt = { startedAt };
                     try {
-                        Models.Video video = extractors.resolve(server);
-                        if (video == null || video.source() == null || video.source().isBlank()) {
-                            throw new IllegalStateException("La fuente no devolvió un video reproducible.");
-                        }
-                        player.start(video, server.name(), playbackRequest, resumeAtSeconds);
-                        PlaybackServerStats.recordSuccess(server, elapsedMillis(startedAt));
+                        Models.Video video = PlaybackRecovery.run(() -> {
+                            attemptStartedAt[0] = System.nanoTime();
+                            Models.Video resolved = requirePlayable(extractors.resolve(server));
+                            player.start(resolved, server.name(), playbackRequest, resumeAtSeconds);
+                            return resolved;
+                        });
+                        PlaybackServerStats.recordSuccess(server, elapsedMillis(attemptStartedAt[0]));
                         player.setPlaybackIssueListener(() ->
                                 PlaybackServerStats.recordFailure(server, 1));
+                        enrichSubtitlesAsync(providerItemId, server, video, player, episode);
                         return server;
                     } catch (InterruptedException ex) {
                         Thread.currentThread().interrupt();
@@ -538,8 +618,7 @@ final class TitleDetailView extends JPanel {
                     Throwable cause = ex instanceof ExecutionException && ex.getCause() != null
                             ? ex.getCause() : ex;
                     if (player.isDisplayable()) {
-                        player.showFailure(cause.getMessage() == null
-                                ? "No se encontró una fuente compatible." : cause.getMessage());
+                        player.showFailure("No se encontró una fuente compatible. Prueba otra opción.");
                     }
                     status.setText("No se pudo reproducir");
                 }
@@ -547,7 +626,8 @@ final class TitleDetailView extends JPanel {
         }.execute();
     }
 
-    private void resolveAndPlay(Models.Server server, String mediaTitle,
+    private void resolveAndPlay(Models.Server server, String providerItemId,
+                                String mediaTitle,
                                 long playbackRequest, EmbeddedPlayerWindow player,
                                 Models.Episode episode, double resumeAtSeconds) {
         status.setText("Preparando reproducción…");
@@ -556,15 +636,18 @@ final class TitleDetailView extends JPanel {
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() throws Exception {
                 long startedAt = System.nanoTime();
+                long[] attemptStartedAt = { startedAt };
                 try {
-                    Models.Video video = extractors.resolve(server);
-                    if (video == null || video.source() == null || video.source().isBlank()) {
-                        throw new IllegalStateException("La fuente no devolvió un video reproducible.");
-                    }
-                    player.start(video, server.name(), playbackRequest, resumeAtSeconds);
-                    PlaybackServerStats.recordSuccess(server, elapsedMillis(startedAt));
+                    Models.Video video = PlaybackRecovery.run(() -> {
+                        attemptStartedAt[0] = System.nanoTime();
+                        Models.Video resolved = requirePlayable(extractors.resolve(server));
+                        player.start(resolved, server.name(), playbackRequest, resumeAtSeconds);
+                        return resolved;
+                    });
+                    PlaybackServerStats.recordSuccess(server, elapsedMillis(attemptStartedAt[0]));
                     player.setPlaybackIssueListener(() ->
                             PlaybackServerStats.recordFailure(server, 1));
+                    enrichSubtitlesAsync(providerItemId, server, video, player, episode);
                     return null;
                 } catch (Exception ex) {
                     PlaybackServerStats.recordFailure(server, elapsedMillis(startedAt));
@@ -581,13 +664,62 @@ final class TitleDetailView extends JPanel {
                     Throwable cause = ex instanceof ExecutionException && ex.getCause() != null
                             ? ex.getCause() : ex;
                     if (player.isDisplayable()) {
-                        player.showFailure(cause.getMessage() == null
-                                ? "No se pudo iniciar la reproducción." : cause.getMessage());
+                        player.showFailure("No se pudo iniciar la reproducción. Prueba otra fuente.");
                     }
                     status.setText("No se pudo reproducir");
                 }
             }
         }.execute();
+    }
+
+    private void enrichSubtitlesAsync(String providerItemId, Models.Server selected,
+                                      Models.Video primary, EmbeddedPlayerWindow player,
+                                      Models.Episode episode) {
+        if (!(provider instanceof TmdbProvider) || primary == null || !player.isDisplayable()) return;
+
+        new SwingWorker<List<Models.Subtitle>, Void>() {
+            @Override protected List<Models.Subtitle> doInBackground() throws Exception {
+                List<Models.Server> compatible = SubtitleAggregator.compatibleServers(
+                        provider, item, episode, providerItemId, List.of(selected));
+                ArrayList<Models.Video> subtitleVideos = new ArrayList<>();
+                for (Models.Server candidate : compatible) {
+                    if (candidate == null || candidate.equals(selected)) continue;
+                    try {
+                        Models.Video video = PlaybackRecovery.run(
+                                () -> requirePlayable(extractors.resolve(candidate)));
+                        if (video.subtitles() != null && !video.subtitles().isEmpty()) {
+                            subtitleVideos.add(video);
+                        }
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        throw ex;
+                    } catch (CancellationException ex) {
+                        throw ex;
+                    } catch (Exception ignored) {
+                        // Subtitle enrichment is best effort and never blocks the playing source.
+                    }
+                }
+                return SubtitleAggregator.additionalSubtitles(primary, subtitleVideos);
+            }
+
+            @Override protected void done() {
+                try {
+                    List<Models.Subtitle> additions = get();
+                    if (player.isDisplayable() && !additions.isEmpty()) {
+                        player.addExternalSubtitles(additions);
+                    }
+                } catch (Exception ignored) {
+                    // The primary source is already playing; enrichment failure is non-fatal.
+                }
+            }
+        }.execute();
+    }
+
+    private static Models.Video requirePlayable(Models.Video video) {
+        if (video == null || video.source() == null || video.source().isBlank()) {
+            throw new IllegalStateException("La fuente no devolvió un video reproducible.");
+        }
+        return video;
     }
 
     private void autoPlaySeries() {
@@ -633,8 +765,7 @@ final class TitleDetailView extends JPanel {
     }
 
     private JLabel errorLabel(Throwable ex) {
-        JLabel label = new JLabel("No se pudieron cargar los episodios: "
-                + (ex.getMessage() == null ? ex.toString() : ex.getMessage()));
+        JLabel label = new JLabel("No se pudieron cargar los episodios. Vuelve a intentarlo más tarde.");
         label.setForeground(Theme.DANGER);
         return label;
     }

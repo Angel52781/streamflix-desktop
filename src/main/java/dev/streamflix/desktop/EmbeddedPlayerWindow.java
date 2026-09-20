@@ -522,6 +522,38 @@ final class EmbeddedPlayerWindow extends JFrame {
         }
     }
 
+    void addExternalSubtitles(List<Models.Subtitle> subtitles) {
+        if (subtitles == null || subtitles.isEmpty() || closing) return;
+
+        Models.Video base = currentVideo;
+        if (base == null) return;
+
+        Models.Video extras = new Models.Video(base.source(), base.headers(), subtitles);
+        List<Models.Subtitle> additions = SubtitleAggregator.additionalSubtitles(base, List.of(extras));
+        if (additions.isEmpty()) return;
+
+        Models.Video merged = SubtitleAggregator.merge(base, List.of(extras));
+        currentVideo = merged;
+
+        MpvIpcClient client = ipc;
+        if (client == null) return;
+
+        new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() throws Exception {
+                for (Models.Subtitle subtitle : additions) {
+                    if (closing || ipc != client) break;
+                    String label = subtitle.label() == null ? "" : subtitle.label();
+                    client.command(List.of("sub-add", subtitle.file(), "auto", label));
+                }
+                return null;
+            }
+
+            @Override protected void done() {
+                if (!closing && ipc == client) refreshTracks();
+            }
+        }.execute();
+    }
+
     void showFailure(String message) {
         SwingUtilities.invokeLater(() -> {
             refreshTimer.stop();
