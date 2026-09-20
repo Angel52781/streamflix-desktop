@@ -4,19 +4,20 @@ Streamflix Desktop is a Windows/JVM port of the Streamflix Reborn provider archi
 
 ## Download for Windows
 
-**[Download Streamflix Desktop for Windows (.exe installer)](https://github.com/Angel52781/streamflix-desktop/releases/latest/download/StreamflixDesktop-Setup.exe)**
+**Recommended:** [download the Streamflix Desktop EXE installer](https://github.com/Angel52781/streamflix-desktop/releases/latest/download/StreamflixDesktop-Setup.exe). It installs per user and does not require a machine-wide deployment.
 
-Run `StreamflixDesktop-Setup.exe` and follow the Windows installer. The installer includes the Java runtime. On first playback, Streamflix downloads the pinned mpv runtime from its upstream GitHub release, verifies its SHA-256, and stores it under `%LOCALAPPDATA%\\Streamflix\\runtime\\mpv`.
+Run `StreamflixDesktop-Setup.exe` and follow the Windows installer. The installer includes the Java runtime. On the first playback attempt that needs mpv, Streamflix downloads the pinned runtime from its upstream GitHub release, verifies its SHA-256, and stores it under `%LOCALAPPDATA%\\Streamflix\\runtime\\mpv`.
 
-Prefer a portable copy? **[Download the portable ZIP](https://github.com/Angel52781/streamflix-desktop/releases/latest/download/StreamflixDesktop-windows.zip)**, extract it, and run `StreamflixDesktop.exe`.
+- **Managed/admin deployment:** [download the MSI installer](https://github.com/Angel52781/streamflix-desktop/releases/latest/download/StreamflixDesktop-Setup.msi). The MSI is intended for machine-wide installation managed by an administrator or deployment tooling.
+- **Portable/advanced use:** [download the portable ZIP](https://github.com/Angel52781/streamflix-desktop/releases/latest/download/StreamflixDesktop-windows.zip), extract it, and run `StreamflixDesktop.exe`. This package is also retained for compatibility with the in-app updater.
 
-You can also browse versioned releases and checksums on the [GitHub Releases page](https://github.com/Angel52781/streamflix-desktop/releases).
+You can also browse versioned releases and checksums on the [GitHub Releases page](https://github.com/Angel52781/streamflix-desktop/releases). GitHub's automatic **Source code (zip)** and **Source code (tar.gz)** downloads are source snapshots for developers; they are not Windows installers and do not contain a ready-to-run packaged application.
 
 ## Current stable release
 
-Version: **1.3.6**
+Version: **1.3.7**
 
-The current stable release is **1.3.6**, combining the 1.3.5 reliability foundation with the improved pop-out player, work-area-aware sizing, resize/move/maximize controls, Pin/always-on-top and Mini modes, scoped focus-stable search, bilingual TMDb fallback, richer title details/recommendations, playback recovery and hardened subtitle/audio handling.
+The current stable release is **1.3.7**, combining the 1.3.5 reliability foundation with the improved pop-out player, work-area-aware sizing, resize/move/maximize controls, Pin/always-on-top and Mini modes, scoped focus-stable search, bilingual TMDb fallback, richer title details/recommendations, playback recovery and hardened subtitle/audio handling.
 
 ### Core experience
 
@@ -85,6 +86,8 @@ Third-party providers can change or disappear without notice. A provider is not 
 
 ## TMDb configuration
 
+See [TMDb setup](docs/TMDB_SETUP.md) for the current account, credential and in-app setup steps.
+
 Streamflix accepts either:
 
 1. STREAMFLIX_TMDB_API_KEY
@@ -104,7 +107,7 @@ Settings includes an in-app step-by-step TMDb setup guide with direct links and 
 - WiX Toolset 3.0+ when creating the Windows installer (`release.ps1`)
 - mpv for local packaging/self-test (`tools\\mpv\\mpv.exe` or `STREAMFLIX_MPV`); `.\\setup-mpv.ps1` provisions the pinned build
 
-The build verifies locked dependencies before compilation. Public release ZIPs do **not** redistribute `mpv.exe`; `release.ps1` removes the build-time copy after the packaged self-test, and the application provisions mpv on first launch.
+The build verifies locked dependencies before compilation. Public release ZIPs do **not** redistribute `mpv.exe`; `release.ps1` removes the build-time copy after the packaged self-test, and the application provisions mpv on the first playback attempt that needs it.
 
 ### Build the app image
 
@@ -120,11 +123,11 @@ Output:
 
     .\\build.ps1 -JarOnly
 
-### Create Windows installer + portable release
+### Create Windows installers + portable release
 
     .\\release.ps1
 
-The release script builds from source, runs the packaged `--self-test`, then creates a versioned/stable `.exe` installer and the portable ZIP, each with SHA-256 checksums. `StreamflixDesktop-Setup.exe` is the primary human download. `StreamflixDesktop-windows.zip` remains available as the portable package and is the stable asset consumed by the in-app updater.
+The release script builds from source, runs the packaged `--self-test`, then creates versioned/stable EXE, MSI and portable ZIP assets with SHA-256 checksums. `StreamflixDesktop-Setup.exe` is the recommended download, `StreamflixDesktop-Setup.msi` is for managed/admin deployment, and `StreamflixDesktop-windows.zip` remains available for portable/advanced use and as the stable asset consumed by the in-app updater.
 
 ## Deterministic test gates
 

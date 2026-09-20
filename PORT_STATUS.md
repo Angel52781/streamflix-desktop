@@ -4,7 +4,7 @@ Upstream reference reviewed: `streamflix-reborn2/streamflix` at commit `91b27174
 
 ## Current Windows state
 
-Current public stable release: **1.3.5**. Development target: **1.3.6**.
+Current public stable release: **1.3.7**.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -19,9 +19,9 @@ Current public stable release: **1.3.5**. Development target: **1.3.6**.
 | Playback fallback | Implemented | Startup-aware fallback and local server ranking |
 | Playback recovery | Implemented | Stall detection, bitrate downgrade and resume |
 | IPTV / Pluto | Implemented | Spain / world IPTV and Pluto MX/ES/US |
-| In-app updates | Development 1.3.5 | GitHub Releases + SHA-256 + rollback-capable portable updater |
-| Persistent image cache | Development 1.3.5 | %LOCALAPPDATA%, bounded and expiring |
-| Diagnostics / logs | Development 1.3.5 | Local rotating log and privacy-filtered diagnostic ZIP |
+| In-app updates | Implemented in 1.3.6 | GitHub Releases + SHA-256 + rollback-capable portable updater |
+| Persistent image cache | Implemented in 1.3.6 | %LOCALAPPDATA%, bounded and expiring |
+| Diagnostics / logs | Implemented in 1.3.6 | Local rotating log and privacy-filtered diagnostic ZIP |
 | Chromecast | Not implemented | Windows parity remains future work |
 | Profiles / Supabase | Out of scope | No Streamflix login planned for desktop |
 ## Validation
@@ -33,11 +33,11 @@ Validated on Windows:
 - `jpackage --type app-image` produces `StreamflixDesktop.exe` with bundled Java runtime.
 - Packaged `--self-test` verifies runtime dependencies, provider registry, version consistency, build-time mpv and updater write access before the public package is stripped of the build-time mpv binary.
 - Real movie and series playback paths have been validated through mpv.
-- The 1.3.5 image cache was observed writing real catalog images under `%LOCALAPPDATA%\Streamflix\cache\images`.
-- `release.ps1` creates versioned and stable-name ZIP/SHA-256 assets.
+- The image cache was observed writing real catalog images under `%LOCALAPPDATA%\Streamflix\cache\images`.
+- `release.ps1` creates versioned and stable-name EXE, MSI and ZIP assets with SHA-256 files.
 - The pinned mpv archive was independently re-downloaded from the exact upstream GitHub release and matched GitHub's published SHA-256.
-- A clean public-package first-run test with no mpv in PATH/global locations provisioned the runtime into a temporary `%LOCALAPPDATA%\Streamflix\runtime\mpv` in 4 seconds, then left Streamflix alive and responsive.
-- The public 1.3.5 ZIP inspection confirmed zero `mpv.exe` entries while retaining the four mpv provenance/license notice files.
+- A clean public-package first-playback provisioning test with no mpv in PATH/global locations provisioned the runtime into a temporary `%LOCALAPPDATA%\Streamflix\runtime\mpv` in 4 seconds, then left Streamflix alive and responsive.
+- Public ZIP inspection confirmed zero `mpv.exe` entries while retaining the four mpv provenance/license notice files.
 
 Deterministic gates currently include JSON, provider/TMDb/M3U fixtures, extractors, dependency smoke,
 user data, mpv player, playback fallback/server ranking, updater parsing, image disk cache, diagnostics privacy and mpv bootstrap tests.
@@ -46,8 +46,9 @@ user data, mpv player, playback fallback/server ranking, updater parsing, image 
 
 - `.github/workflows/ci.yml` runs deterministic builds/tests on Windows and Linux.
 - `.github/workflows/release.yml` is tag-driven and refuses a tag that does not match `VERSION`.
-- Release jobs download the pinned mpv archive for build/self-test, remove the build-time mpv binary from the public package, and publish both stable-name and versioned assets.
-- Public installations provision mpv directly from the pinned upstream GitHub release on first launch after SHA-256 verification; Streamflix does not redistribute `mpv.exe` in its ZIP.
+- Release jobs download the pinned mpv archive for build/self-test, remove the build-time mpv binary from the public package, and publish stable-name and versioned EXE, MSI and ZIP assets with their SHA-256 files.
+- The per-user EXE is the recommended download; the MSI is intended for managed/admin deployment; the portable ZIP remains available for advanced use and updater compatibility.
+- Public installations provision mpv directly from the pinned upstream GitHub release on the first playback attempt that needs it, after SHA-256 verification; Streamflix does not redistribute `mpv.exe` in its ZIP.
 - The application checks GitHub Releases asynchronously; no Streamflix backend is required.
 - User settings, favorites and history live outside the application directory and are not replaced by updates.
 
@@ -58,4 +59,4 @@ user data, mpv player, playback fallback/server ranking, updater parsing, image 
 - Some public provider sites can change HTML, domain or anti-bot behavior without notice.
 - `MainFrame` and `EmbeddedPlayerWindow` remain large classes and should be decomposed incrementally, not rewritten wholesale.
 - More silent provider/extractor fallback catches should be converted to structured diagnostics where doing so does not create noisy logs.
-- First-run mpv provisioning depends on availability of the pinned upstream GitHub asset; the already provisioned runtime remains local and reusable if GitHub is later unavailable.
+- On-demand mpv provisioning at the first playback attempt that needs it depends on availability of the pinned upstream GitHub asset; the already provisioned runtime remains local and reusable if GitHub is later unavailable.
