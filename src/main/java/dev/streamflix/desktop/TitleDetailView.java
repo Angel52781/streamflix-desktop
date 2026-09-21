@@ -169,8 +169,8 @@ final class TitleDetailView extends JPanel {
 
             JPanel railActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
             railActions.setOpaque(false);
-            JButton previous = Theme.button("‹");
-            JButton next = Theme.button("›");
+            JButton previous = Theme.iconButton(StreamflixIcons.Glyph.CHEVRON_LEFT, "Anterior");
+            JButton next = Theme.iconButton(StreamflixIcons.Glyph.CHEVRON_RIGHT, "Siguiente");
             previous.setToolTipText("Anterior");
             next.setToolTipText("Siguiente");
             previous.getAccessibleContext().setAccessibleName("Mostrar recomendaciones anteriores");
@@ -314,8 +314,8 @@ final class TitleDetailView extends JPanel {
         if (item.type() == Models.ShowType.MOVIE) {
             double resumeAt = resumable ? historyEntry.progressSeconds() : 0.0;
             JButton play = Theme.primaryButton(resumable
-                    ? "▶  Continuar · " + formatTime(resumeAt)
-                    : "▶  Reproducir");
+                    ? "Continuar · " + formatTime(resumeAt)
+                    : "Reproducir", StreamflixIcons.Glyph.PLAY);
             play.addActionListener(e -> chooseServerAndPlay(
                     item.providerId(), item.title(), true, null, resumeAt, null));
             actions.add(play);
@@ -331,9 +331,9 @@ final class TitleDetailView extends JPanel {
                     null,
                     null
             );
-            String label = "▶  Continuar T" + historyEntry.seasonNumber()
+            String label = "Continuar T" + historyEntry.seasonNumber()
                     + ":E" + historyEntry.episodeNumber();
-            JButton continueButton = Theme.primaryButton(label);
+            JButton continueButton = Theme.primaryButton(label, StreamflixIcons.Glyph.PLAY);
             continueButton.addActionListener(e -> chooseServerAndPlay(
                     historyEntry.mediaId(),
                     historyEntry.mediaTitle() == null ? item.title() : historyEntry.mediaTitle(),
@@ -345,17 +345,20 @@ final class TitleDetailView extends JPanel {
             actions.add(continueButton);
         }
 
-        JButton favorite = Theme.button(UserData.isFavorite(provider.id(), item.id())
-                ? "✓  En mi lista" : "+  Mi lista");
+        boolean initiallyFavorite = UserData.isFavorite(provider.id(), item.id());
+        JButton favorite = Theme.button(initiallyFavorite ? "En mi lista" : "Mi lista",
+                initiallyFavorite ? StreamflixIcons.Glyph.CHECK : StreamflixIcons.Glyph.PLUS);
         favorite.addActionListener(e -> {
             UserData.toggleFavorite(provider.id(), item);
-            favorite.setText(UserData.isFavorite(provider.id(), item.id())
-                    ? "✓  En mi lista" : "+  Mi lista");
+            boolean selected = UserData.isFavorite(provider.id(), item.id());
+            favorite.setText(selected ? "En mi lista" : "Mi lista");
+            Theme.setButtonIcon(favorite,
+                    selected ? StreamflixIcons.Glyph.CHECK : StreamflixIcons.Glyph.PLUS);
         });
         actions.add(favorite);
 
         if (item.type() == Models.ShowType.MOVIE) {
-            JButton servers = Theme.button("Opciones de reproducción");
+            JButton servers = Theme.button("Opciones de reproducción", StreamflixIcons.Glyph.MORE);
             servers.addActionListener(e -> chooseServerAndPlay(
                     item.providerId(), item.title(), false, null, 0.0, servers));
             actions.add(servers);
@@ -378,7 +381,7 @@ final class TitleDetailView extends JPanel {
 
         hero.add(copy, Integer.valueOf(2));
 
-        JButton back = Theme.button("←  Volver");
+        JButton back = Theme.button("Volver", StreamflixIcons.Glyph.BACK);
         back.addActionListener(e -> onBack.run());
         hero.add(back, Integer.valueOf(3));
 

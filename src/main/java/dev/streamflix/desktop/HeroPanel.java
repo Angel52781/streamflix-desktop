@@ -97,11 +97,11 @@ final class HeroPanel extends JLayeredPane {
         actions.setOpaque(false);
         actions.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JButton play = Theme.primaryButton("▶  Reproducir");
+        JButton play = Theme.primaryButton("Reproducir", StreamflixIcons.Glyph.PLAY);
         play.addActionListener(e -> onPlay.accept(item));
         actions.add(play);
 
-        JButton open = Theme.button("Más información");
+        JButton open = Theme.button("Más información", StreamflixIcons.Glyph.INFO);
         open.addActionListener(e -> onOpen.accept(item));
         actions.add(open);
 

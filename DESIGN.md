@@ -59,10 +59,23 @@ components:
 
 Cinema editorial nocturno: superficies de carbón profundo, tipografía de interfaz sobria y un rojo cálido reservado para acciones y progreso. El artwork proporciona el contexto emocional; la UI mantiene contraste y jerarquía sin neón, glassmorphism ni métricas inventadas.
 
+## Brand
+
+The approved Streamflix mark is an abstract segmented **S**: a warm-red cinematic ribbon cut by negative space and anchored by two off-white angular blocks. It is intentionally simple enough to survive at Windows taskbar size while remaining distinct from generic play-button streaming marks.
+
+Canonical source assets:
+
+- `assets/brand/streamflix-mark.svg` — transparent symbol.
+- `assets/brand/streamflix-app-icon.svg` — symbol on the charcoal app tile.
+- `BrandMark.java` — runtime/vector renderer used by Swing and build-time icon export.
+
+Do not redraw the mark into a play triangle, add gradients/glow, or introduce a Netflix-like wordmark treatment.
+
 ## Colors
 
 - Background: `Theme.BG`; surfaces: `Theme.PANEL` and `Theme.PANEL_ALT`; dividers: `Theme.BORDER`.
 - Primary action and playback progress: `Theme.ACCENT`; keyboard focus: `Theme.FOCUS`; success: `Theme.SUCCESS`; recoverable error: `Theme.DANGER`.
+- Brand mark: `#C92A36` red + `#F6F7F9` off-white on `#0A0C11` charcoal.
 
 ## Typography
 
@@ -79,6 +92,12 @@ Depth comes from tonal surface layers and restrained borders, never glass effect
 ## Shapes
 
 Controls use a 12 px corner radius; compact labels and progress affordances preserve a softer 6 px radius.
+
+## Iconography
+
+Functional controls use the vector `StreamflixIcons` system rather than Unicode glyphs. Icons are geometric, line-weight consistent, DPI-independent, and subordinate to text labels where clarity/accessibility benefits from both. Tooltips and accessible names remain required for icon-only controls.
+
+The brand mark supplies personality; control icons stay neutral. Do not generate each functional icon independently with image models.
 
 ## Components and behavior
 

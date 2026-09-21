@@ -86,8 +86,34 @@ final class Theme {
         return new FlatButton(text, false, false);
     }
 
+    static JButton button(String text, StreamflixIcons.Glyph glyph) {
+        JButton button = new FlatButton(text, false, false);
+        setButtonIcon(button, glyph);
+        return button;
+    }
+
     static JButton primaryButton(String text) {
         return new FlatButton(text, true, false);
+    }
+
+    static JButton primaryButton(String text, StreamflixIcons.Glyph glyph) {
+        JButton button = new FlatButton(text, true, false);
+        setButtonIcon(button, glyph);
+        return button;
+    }
+
+    static JButton iconButton(StreamflixIcons.Glyph glyph, String accessibleName) {
+        FlatButton button = new FlatButton("", false, false);
+        button.setBorder(new EmptyBorder(8, 8, 8, 8));
+        button.setIcon(StreamflixIcons.icon(glyph, 18));
+        button.setToolTipText(accessibleName);
+        button.getAccessibleContext().setAccessibleName(accessibleName);
+        return button;
+    }
+
+    static void setButtonIcon(JButton button, StreamflixIcons.Glyph glyph) {
+        button.setIcon(StreamflixIcons.icon(glyph, 18));
+        button.setIconTextGap(8);
     }
 
     static JButton navButton(String text) {

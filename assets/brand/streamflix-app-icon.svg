@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Streamflix application icon</title>
+  <rect x="8" y="8" width="496" height="496" rx="96" fill="#0A0C11"/>
+  <g transform="translate(51.2 51.2) scale(1.5937743191)">
+    <g fill="#C92A36">
+      <path d="M126 36 C109 34 82 38 63 55 L95 85 C93 74 100 60 126 36 Z"/>
+      <path d="M55 64 C48 74 47 92 52 105 C58 120 73 130 95 139 L149 152 Z"/>
+      <path d="M107 97 L166 115 C185 121 198 136 202 151 C206 164 203 176 200 183 Z"/>
+      <path d="M158 161 L192 193 C186 202 174 209 159 212 C147 215 136 216 127 215 L156 185 C162 179 161 170 158 161 Z"/>
+    </g>
+    <g fill="#F6F7F9">
+      <path d="M111 67 H156 L157 95 H198 V36 H142 Z"/>
+      <path d="M49 153 V215 H111 L141 185 H97 L96 153 Z"/>
+    </g>
+  </g>
+</svg>
