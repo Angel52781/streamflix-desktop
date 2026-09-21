@@ -15,13 +15,14 @@ You can also browse versioned releases and checksums on the [GitHub Releases pag
 
 ## Current stable release
 
-Version: **1.3.7**
+Version: **1.3.8**
 
-The current stable release is **1.3.7**, combining the 1.3.5 reliability foundation with the improved pop-out player, work-area-aware sizing, resize/move/maximize controls, Pin/always-on-top and Mini modes, scoped focus-stable search, bilingual TMDb fallback, richer title details/recommendations, playback recovery and hardened subtitle/audio handling.
+The current stable release is **1.3.8**, adding the approved Streamflix visual identity and a coherent vector icon system on top of the 1.3.7 reliability/player/search foundation. The Windows app, taskbar/window surfaces and release packages now use the Streamflix S mark; legacy Unicode control glyphs were replaced with DPI-independent vector icons, including a corrected Settings gear.
 
 ### Core experience
 
 - Java 17-compatible JVM application with Swing + FlatLaf
+- Streamflix visual identity with a native Windows app icon, branded window surfaces and a coherent DPI-independent vector control icon system
 - Cinematic desktop navigation with Home, Movies, Series, Live TV and Mi lista
 - Home discovery rails for Horror, Thriller, Drama and Comedy
 - Streaming-style rail navigation with visible previous/next controls and contextual horizontal wheel zones
@@ -152,6 +153,7 @@ The build currently runs:
 - ImageDiskCacheTest
 - DiagnosticsTest
 - MpvBootstrapTest
+- BrandAssetsTest
 
 Additional opt-in live gates validate real third-party/network behavior and are intentionally not part of deterministic builds.
 
@@ -184,11 +186,11 @@ Additional opt-in live gates validate real third-party/network behavior and are 
 
 ## Known limitations
 
-- TMDb has one certified playback route in this release candidate (VixSrc); additional independent TMDb playback routes remain desirable for resilience.
+- TMDb has one certified playback route in the current release (VixSrc); additional independent TMDb playback routes remain desirable for resilience.
 - Some upstream providers rely on unstable public websites and may require maintenance after domain/HTML changes.
 - Chromecast/casting parity is not included in the Windows release.
 - Supabase/user-profile sync from Android is intentionally not included; the desktop app has no Streamflix login requirement.
-- The portable updater requires a normal writable portable installation and still needs a real public old-version → new-version end-to-end validation.
+- The portable updater requires a normal writable portable installation. A real public 1.3.6 → 1.3.7 update was validated end to end with SHA-256 verification, replacement, relaunch and no rollback/error log.
 - First playback setup requires network access to the pinned upstream mpv GitHub release; once provisioned, the runtime is reused from `%LOCALAPPDATA%`.
 - DRM/paywall bypass is intentionally out of scope.
 
