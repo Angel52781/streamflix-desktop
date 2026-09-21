@@ -63,6 +63,9 @@ final class SettingsDialog extends JDialog {
         tabs.addTab("TMDb", buildTmdbPanel());
         tabs.addTab("Fuentes", buildSourcesPanel());
         tabs.addTab("Datos", buildDataPanel());
+        if (Boolean.getBoolean("streamflix.dev")) {
+            tabs.addTab("Diagnóstico", buildDiagnosticsPanel());
+        }
         tabs.addTab("Acerca de", buildAboutPanel());
         root.add(tabs, BorderLayout.CENTER);
 
@@ -244,6 +247,52 @@ final class SettingsDialog extends JDialog {
         scroll.getViewport().setBackground(Theme.BG);
         scroll.getVerticalScrollBar().setUnitIncrement(22);
         return scroll;
+    }
+
+    private JComponent buildDiagnosticsPanel() {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setBackground(Theme.BG);
+        wrapper.setBorder(new EmptyBorder(12, 4, 8, 4));
+
+        JPanel diagnostics = Theme.surface();
+        diagnostics.setLayout(new BoxLayout(diagnostics, BoxLayout.Y_AXIS));
+
+        JLabel heading = Theme.heading("Diagnóstico de desarrollo", 18f);
+        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
+        diagnostics.add(heading);
+        diagnostics.add(Box.createVerticalStrut(8));
+
+        JLabel explanation = Theme.muted(
+                "<html><body style='width:640px'>"
+                + "Estas herramientas solo aparecen cuando Streamflix se inicia con <b>-Dstreamflix.dev=true</b>. "
+                + "Úsalas para validar recuperación y fallback sin esperar a que una señal real se caiga."
+                + "</body></html>");
+        explanation.setAlignmentX(Component.LEFT_ALIGNMENT);
+        diagnostics.add(explanation);
+        diagnostics.add(Box.createVerticalStrut(18));
+
+        JButton simulateFailure = Theme.primaryButton("Simular caída de señal deportiva");
+        simulateFailure.setAlignmentX(Component.LEFT_ALIGNMENT);
+        simulateFailure.addActionListener(e -> {
+            boolean triggered = EmbeddedPlayerWindow.simulateSignalFailureForDiagnostics();
+            if (triggered) {
+                status.setText("Caída simulada enviada al reproductor activo.");
+            } else {
+                status.setText("No hay una reproducción activa para probar.");
+            }
+        });
+        diagnostics.add(simulateFailure);
+        diagnostics.add(Box.createVerticalStrut(10));
+
+        JLabel hint = Theme.muted(
+                "<html><body style='width:640px'>Para validar Deportes: reproduce un evento con varias señales, "
+                + "abre Configuración → Diagnóstico y pulsa el botón. El reproductor debe mostrar "
+                + "<b>Cambiando a otra señal…</b> y continuar con la siguiente fuente.</body></html>");
+        hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        diagnostics.add(hint);
+
+        wrapper.add(diagnostics, BorderLayout.NORTH);
+        return wrapper;
     }
 
     private JComponent sourceGroup(String title, java.util.List<Provider> providers) {

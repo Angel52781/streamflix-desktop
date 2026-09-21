@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 
 /**
  * Streamflix-owned video player. mpv remains the engine, but all visible chrome
@@ -74,6 +75,7 @@ final class EmbeddedPlayerWindow extends JFrame {
     private boolean recovering;
     private ProgressListener progressListener;
     private Runnable playbackIssueListener = () -> {};
+    private BooleanSupplier playbackIssueHandler = () -> false;
     private long lastProgressPublishNanos;
     private final Window appOwner;
     private boolean fullScreen;
@@ -380,6 +382,17 @@ final class EmbeddedPlayerWindow extends JFrame {
 
     void setPlaybackIssueListener(Runnable listener) {
         this.playbackIssueListener = listener == null ? () -> {} : listener;
+    }
+
+    void setPlaybackIssueHandler(BooleanSupplier handler) {
+        this.playbackIssueHandler = handler == null ? () -> false : handler;
+    }
+
+    static boolean simulateSignalFailureForDiagnostics() {
+        EmbeddedPlayerWindow window = activeWindow;
+        if (window == null || !window.isDisplayable() || window.currentVideo == null) return false;
+        SwingUtilities.invokeLater(() -> window.requestRecovery("Caída de señal simulada desde Diagnóstico."));
+        return true;
     }
 
     static void onApplicationStateChanged(int state) {
@@ -1067,6 +1080,16 @@ final class EmbeddedPlayerWindow extends JFrame {
         if (closing || recovering || currentVideo == null) return;
 
         try { playbackIssueListener.run(); } catch (RuntimeException ignored) {}
+
+        try {
+            if (playbackIssueHandler.getAsBoolean()) {
+                refreshTimer.stop();
+                setPreparing("Cambiando a otra señal…");
+                return;
+            }
+        } catch (RuntimeException ex) {
+            AppLog.warn("player", "Falló el handler de recuperación de señal", ex);
+        }
 
         boolean automaticQuality = "auto".equals(PlaybackSettings.qualityProfile());
         int maxRecoveries = automaticQuality ? 2 : 1;
