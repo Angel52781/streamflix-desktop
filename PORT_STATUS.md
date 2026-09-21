@@ -4,11 +4,12 @@ Upstream reference reviewed: `streamflix-reborn2/streamflix` at commit `91b27174
 
 ## Current Windows state
 
-Current public stable release: **1.3.7**.
+Current public stable release: **1.3.8**.
 
 | Area | Status | Notes |
 |---|---|---|
 | Windows desktop UI | Implemented | Swing/JVM, mouse + keyboard, HiDPI-aware |
+| Visual identity / iconography | Implemented in 1.3.8 | Streamflix S app mark, Windows package icon and DPI-independent vector controls replace legacy Unicode glyphs |
 | Movies / Series / Search | Implemented | TMDb EN/ES plus alternative providers |
 | Catalog filters | Implemented | Popular and genre filters with progressive loading |
 | Home rails | Implemented | Contextual horizontal wheel, arrows, Ver más |
@@ -38,6 +39,7 @@ Validated on Windows:
 - The pinned mpv archive was independently re-downloaded from the exact upstream GitHub release and matched GitHub's published SHA-256.
 - A clean public-package first-playback provisioning test with no mpv in PATH/global locations provisioned the runtime into a temporary `%LOCALAPPDATA%\Streamflix\runtime\mpv` in 4 seconds, then left Streamflix alive and responsive.
 - Public ZIP inspection confirmed zero `mpv.exe` entries while retaining the four mpv provenance/license notice files.
+- A real public portable update from 1.3.6 → 1.3.7 completed end to end in an isolated profile: release detection, ZIP download, published SHA-256 match, staged replacement, relaunch into 1.3.7, no rollback directory left behind and no update error log.
 
 Deterministic gates currently include JSON, provider/TMDb/M3U fixtures, extractors, dependency smoke,
 user data, mpv player, playback fallback/server ranking, updater parsing, image disk cache, diagnostics privacy and mpv bootstrap tests.
@@ -54,7 +56,7 @@ user data, mpv player, playback fallback/server ranking, updater parsing, image 
 
 ## Remaining audit items
 
-- The portable updater still needs one real public old-version -> new-version end-to-end update after a release newer than the installed build exists.
+- Re-run the public updater E2E periodically across future release boundaries; the 1.3.6 → 1.3.7 path has already passed.
 - TMDb playback currently has one certified route (VixSrc); independent playback routes would improve resilience.
 - Some public provider sites can change HTML, domain or anti-bot behavior without notice.
 - `MainFrame` and `EmbeddedPlayerWindow` remain large classes and should be decomposed incrementally, not rewritten wholesale.
