@@ -37,15 +37,15 @@ final class EmbeddedPlayerWindow extends JFrame {
     private final JLabel timeLabel = Theme.muted("00:00 / 00:00");
     private final JLabel status = Theme.muted("Preparando reproducción…");
 
-    private final JButton playPause = Theme.primaryButton("Pausar");
+    private final JButton playPause = Theme.primaryButton("Pausar", StreamflixIcons.Glyph.PAUSE);
     private final JButton back10 = Theme.button("−10 s");
     private final JButton forward10 = Theme.button("+10 s");
-    private final JButton mute = Theme.button("\uD83D\uDD0A");
-    private final JButton pinWindow = Theme.button("Pin");
+    private final JButton mute = Theme.iconButton(StreamflixIcons.Glyph.VOLUME, "Silenciar");
+    private final JButton pinWindow = Theme.button("Pin", StreamflixIcons.Glyph.PIN);
     private final JButton miniModeButton = Theme.button("Mini");
-    private final JButton minimizeWindow = Theme.button("—");
-    private final JButton maximizeWindow = Theme.button("□");
-    private final JButton fullscreen = Theme.button("⛶");
+    private final JButton minimizeWindow = Theme.iconButton(StreamflixIcons.Glyph.MINIMIZE, "Minimizar reproductor");
+    private final JButton maximizeWindow = Theme.iconButton(StreamflixIcons.Glyph.MAXIMIZE, "Maximizar reproductor");
+    private final JButton fullscreen = Theme.iconButton(StreamflixIcons.Glyph.FULLSCREEN, "Pantalla completa");
 
     private final JSlider timeline = new JSlider(0, 1000, 0);
     private final JSlider volume = new JSlider(0, 100, 80);
@@ -100,6 +100,7 @@ final class EmbeddedPlayerWindow extends JFrame {
 
     private EmbeddedPlayerWindow(Window owner, String title) {
         super("Streamflix · " + title);
+        setIconImages(BrandMark.windowIcons());
         this.appOwner = owner;
         setUndecorated(true);
         setResizable(true);
@@ -409,7 +410,7 @@ final class EmbeddedPlayerWindow extends JFrame {
             chromeHideTimer.stop();
             chromeTop.setVisible(true);
             chromeBottom.setVisible(true);
-            fullscreen.setText("Pantalla completa");
+            fullscreen.setToolTipText("Pantalla completa (F)");
         }
 
         setState(Frame.ICONIFIED);
@@ -509,7 +510,7 @@ final class EmbeddedPlayerWindow extends JFrame {
                 status.setForeground(Theme.MUTED);
                 status.setText("Reproduciendo");
                 loadingProgress.setIndeterminate(false);
-                playPause.setText("Pausar");
+                setPlayPauseState(false);
                 showStage(CARD_VIDEO);
                 refreshTimer.start();
                 revealChrome();
@@ -598,8 +599,7 @@ final class EmbeddedPlayerWindow extends JFrame {
             topActions.add(button);
         }
 
-        JButton close = Theme.button("←");
-        close.setToolTipText("Volver a Streamflix (Esc)");
+        JButton close = Theme.iconButton(StreamflixIcons.Glyph.BACK, "Volver a Streamflix (Esc)");
         close.setPreferredSize(new Dimension(42, 36));
         close.addActionListener(e -> dispose());
         topActions.add(close);
@@ -713,7 +713,9 @@ final class EmbeddedPlayerWindow extends JFrame {
         box.setOpaque(false);
         box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
 
-        loadingTitle.setForeground(Theme.ACCENT);
+        loadingTitle.setForeground(Theme.TEXT);
+        loadingTitle.setIcon(BrandMark.markIcon(30));
+        loadingTitle.setIconTextGap(9);
         loadingTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
         loadingDetail.setAlignmentX(Component.CENTER_ALIGNMENT);
         loadingDetail.setFont(Theme.FONT.deriveFont(13f));
@@ -771,7 +773,7 @@ final class EmbeddedPlayerWindow extends JFrame {
             Object raw = requireIpc().getProperty("pause");
             boolean paused = raw instanceof Boolean b && b;
             requireIpc().setProperty("pause", !paused);
-            SwingUtilities.invokeLater(() -> playPause.setText(paused ? "Pausar" : "Reanudar"));
+            SwingUtilities.invokeLater(() -> setPlayPauseState(!paused));
         });
     }
 
@@ -790,8 +792,14 @@ final class EmbeddedPlayerWindow extends JFrame {
     }
 
     private void updateMuteButton(boolean muted) {
-        mute.setText(muted ? "\uD83D\uDD07" : "\uD83D\uDD0A");
+        Theme.setButtonIcon(mute, muted ? StreamflixIcons.Glyph.VOLUME_OFF : StreamflixIcons.Glyph.VOLUME);
         mute.setToolTipText(muted ? "Activar sonido" : "Silenciar");
+        mute.getAccessibleContext().setAccessibleName(muted ? "Activar sonido" : "Silenciar");
+    }
+
+    private void setPlayPauseState(boolean paused) {
+        playPause.setText(paused ? "Reanudar" : "Pausar");
+        Theme.setButtonIcon(playPause, paused ? StreamflixIcons.Glyph.PLAY : StreamflixIcons.Glyph.PAUSE);
     }
 
     private void toggleAlwaysOnTopMode() {
@@ -816,7 +824,7 @@ final class EmbeddedPlayerWindow extends JFrame {
             restoreWindowBounds = getBounds();
             setBounds(work);
             maximizedWindowed = true;
-            maximizeWindow.setText("❐");
+            Theme.setButtonIcon(maximizeWindow, StreamflixIcons.Glyph.RESTORE);
             maximizeWindow.setToolTipText("Restaurar tamaño");
         } else {
             Rectangle target = restoreWindowBounds != null
@@ -824,7 +832,7 @@ final class EmbeddedPlayerWindow extends JFrame {
                     : centeredBounds(work, Math.min(1320, work.width), Math.min(820, work.height));
             setBounds(fitBoundsToWorkArea(target, work, normalMinimumSize(work)));
             maximizedWindowed = false;
-            maximizeWindow.setText("□");
+            Theme.setButtonIcon(maximizeWindow, StreamflixIcons.Glyph.MAXIMIZE);
             maximizeWindow.setToolTipText("Maximizar dentro del área útil de Windows");
         }
         updateResponsiveChrome(getContentPane().getWidth());
@@ -920,6 +928,9 @@ final class EmbeddedPlayerWindow extends JFrame {
                 setLocationRelativeTo(appOwner);
             }
         }
+        fullscreen.setToolTipText(fullScreen
+                ? "Salir de pantalla completa (F)"
+                : "Pantalla completa (F)");
         videoSurface.requestFocusInWindow();
     }
 
@@ -992,7 +1003,7 @@ final class EmbeddedPlayerWindow extends JFrame {
                     }
 
                     timeLabel.setText(formatTime(state.time()) + " / " + formatTime(state.duration()));
-                    playPause.setText(state.paused() ? "Reanudar" : "Pausar");
+                    setPlayPauseState(state.paused());
 
                     if (state.eofReached()) {
                         stalledTicks = 0;
@@ -1125,7 +1136,7 @@ final class EmbeddedPlayerWindow extends JFrame {
                     status.setForeground(Theme.MUTED);
                     status.setText("Reproduciendo");
                     loadingProgress.setIndeterminate(false);
-                    playPause.setText("Pausar");
+                    setPlayPauseState(false);
                     showStage(CARD_VIDEO);
                     refreshTracks();
                     refreshTimer.start();
@@ -1370,7 +1381,7 @@ final class EmbeddedPlayerWindow extends JFrame {
                     status.setForeground(Theme.MUTED);
                     status.setText("Reproduciendo");
                     loadingProgress.setIndeterminate(false);
-                    playPause.setText("Pausar");
+                    setPlayPauseState(false);
                     showStage(CARD_VIDEO);
                     refreshTracks();
                     refreshTimer.start();

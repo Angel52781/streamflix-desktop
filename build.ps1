@@ -43,12 +43,16 @@ $depCp = $depJars -join ';'
 $sources = @(Get-ChildItem src\main\java -Recurse -Filter *.java | Sort-Object FullName | ForEach-Object FullName)
 $tests = @(Get-ChildItem src\test\java -Recurse -Filter *.java | Sort-Object FullName | ForEach-Object FullName)
 Invoke-Checked $javac (@('--release','17','-encoding','UTF-8','-cp',$depCp,'-d','build\classes') + $sources)
+New-Item build\branding -ItemType Directory -Force | Out-Null
+Invoke-Checked $java @('-cp',("build\classes;" + $depCp),'dev.streamflix.desktop.IconExporter','build\branding')
+$brandIcon = Join-Path $PSScriptRoot 'build\branding\StreamflixDesktop.ico'
+if (-not (Test-Path -LiteralPath $brandIcon -PathType Leaf)) { throw 'Streamflix application icon export failed.' }
 $classPath = ($depJars | ForEach-Object { 'lib/' + (Split-Path $_ -Leaf) }) -join ' '
 $manifest = "Manifest-Version: 1.0`nMain-Class: dev.streamflix.desktop.App`nImplementation-Version: $version`nClass-Path: $classPath`n`n"
 [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'build\MANIFEST.MF'), $manifest, (New-Object Text.UTF8Encoding $false))
 Invoke-Checked $jar @('--create','--file','build\streamflix-desktop.jar','--date=2020-01-01T00:00:00Z','--manifest','build\MANIFEST.MF','-C','build\classes','.')
 Invoke-Checked $javac (@('--release','17','-encoding','UTF-8','-cp',("build\classes;" + $depCp),'-d','build\test-classes') + $tests)
-foreach ($test in @('JsonTest','ProviderFixtureTest','TmdbFixtureTest','TmdbTitleIndexTest','M3uPlaylistTest','M3uLiveProviderTest','ExtractorFixtureTest','DependencySmokeTest','UserDataTest','MpvPlayerTest','MainFrameSearchTest','PlaybackFallbackTest','PlaybackRecoveryTest','SubtitleAggregatorTest','PlaybackServerStatsTest','UpdateServiceTest','ImageDiskCacheTest','DiagnosticsTest','MpvBootstrapTest')) {
+foreach ($test in @('JsonTest','ProviderFixtureTest','TmdbFixtureTest','TmdbTitleIndexTest','M3uPlaylistTest','M3uLiveProviderTest','ExtractorFixtureTest','DependencySmokeTest','UserDataTest','MpvPlayerTest','MainFrameSearchTest','PlaybackFallbackTest','PlaybackRecoveryTest','SubtitleAggregatorTest','PlaybackServerStatsTest','UpdateServiceTest','ImageDiskCacheTest','DiagnosticsTest','MpvBootstrapTest','BrandAssetsTest')) {
     Invoke-Checked $java @('-cp','build\streamflix-desktop.jar;build\test-classes',"dev.streamflix.desktop.$test")
 }
 Write-Host 'JAR OK: build\streamflix-desktop.jar (keep sibling build\lib directory)'
@@ -82,6 +86,7 @@ Invoke-Checked $jpackage @(
     '--main-jar','streamflix-desktop.jar','--main-class','dev.streamflix.desktop.App',
     '--dest','dist','--description','Streamflix Desktop',
     '--vendor','Streamflix Desktop Community Port','--app-version',$version,
+    '--icon',$brandIcon,
     '--runtime-image',$runtimeImage
 )
 $mpvSource = Split-Path ([IO.Path]::GetFullPath($mpvExe)) -Parent

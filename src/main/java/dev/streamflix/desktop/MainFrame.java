@@ -63,6 +63,7 @@ final class MainFrame extends JFrame {
         this.searchDebounce = new Timer(450, e -> runSearch(false));
         this.searchDebounce.setRepeats(false);
 
+        setIconImages(BrandMark.windowIcons());
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         getRootPane().putClientProperty("JRootPane.titleBarBackground", Theme.SIDEBAR);
         getRootPane().putClientProperty("JRootPane.titleBarForeground", Theme.TEXT);
@@ -130,9 +131,10 @@ final class MainFrame extends JFrame {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         left.setOpaque(false);
 
-        JLabel logo = new JLabel("STREAMFLIX");
-        logo.setForeground(Theme.ACCENT);
-        logo.setFont(Theme.FONT_DISPLAY.deriveFont(20f));
+        JLabel logo = new JLabel("STREAMFLIX", BrandMark.markIcon(30), SwingConstants.LEFT);
+        logo.setForeground(Theme.TEXT);
+        logo.setFont(Theme.FONT_DISPLAY.deriveFont(19f));
+        logo.setIconTextGap(9);
         javax.swing.border.Border logoPadding = new EmptyBorder(0, 0, 0, 10);
         logo.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(0, 0, 0, 0)), logoPadding));
@@ -206,7 +208,7 @@ final class MainFrame extends JFrame {
         });
         tools.add(search);
 
-        JButton settings = Theme.button("Ajustes");
+        JButton settings = Theme.button("Ajustes", StreamflixIcons.Glyph.SETTINGS);
         settings.addActionListener(e -> openSettings());
         tools.add(settings);
 
@@ -656,8 +658,8 @@ final class MainFrame extends JFrame {
 
         JPanel railActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         railActions.setOpaque(false);
-        JButton previous = Theme.button("‹");
-        JButton next = Theme.button("›");
+        JButton previous = Theme.iconButton(StreamflixIcons.Glyph.CHEVRON_LEFT, "Anterior");
+        JButton next = Theme.iconButton(StreamflixIcons.Glyph.CHEVRON_RIGHT, "Siguiente");
         previous.setToolTipText("Anterior");
         next.setToolTipText("Siguiente");
         previous.setPreferredSize(new Dimension(38, 34));
@@ -666,7 +668,7 @@ final class MainFrame extends JFrame {
         railActions.add(next);
 
         if (viewMore != null) {
-            JButton more = Theme.button("Ver más");
+            JButton more = Theme.button("Ver más", StreamflixIcons.Glyph.MORE);
             more.addActionListener(e -> viewMore.run());
             railActions.add(more);
         }

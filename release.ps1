@@ -57,9 +57,14 @@ if (Test-Path -LiteralPath $installerStage) {
 New-Item -ItemType Directory -Path $installerStage -Force | Out-Null
 
 Write-Host "Creating per-user EXE installer..."
+$brandIcon = Join-Path $PSScriptRoot 'build\branding\StreamflixDesktop.ico'
+if (-not (Test-Path -LiteralPath $brandIcon -PathType Leaf)) {
+    throw 'Streamflix application icon missing from validated build output.'
+}
 $commonInstallerArguments = @(
     '--name','StreamflixDesktop',
     '--app-image',(Join-Path $PSScriptRoot 'dist\StreamflixDesktop'),
+    '--icon',$brandIcon,
     '--dest',$installerStage,
     '--app-version',$version,
     '--vendor','Streamflix Desktop Community Port',
