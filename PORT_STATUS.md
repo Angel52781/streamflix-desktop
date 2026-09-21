@@ -20,6 +20,7 @@ Current public stable release: **1.3.8**.
 | Playback fallback | Implemented | Startup-aware fallback and local server ranking |
 | Playback recovery | Implemented | Stall detection, bitrate downgrade and resume |
 | IPTV / Pluto | Implemented | Spain / world IPTV and Pluto MX/ES/US |
+| Sports hub | Implemented in working tree | Free-only multi-source schedules (TheSportsDB + SportScore), auto-refresh, favorites, Home live rail, country-aware multi-broadcaster IPTV resolution, health ranking and signal fallback |
 | In-app updates | Implemented in 1.3.6 | GitHub Releases + SHA-256 + rollback-capable portable updater |
 | Persistent image cache | Implemented in 1.3.6 | %LOCALAPPDATA%, bounded and expiring |
 | Diagnostics / logs | Implemented in 1.3.6 | Local rotating log and privacy-filtered diagnostic ZIP |

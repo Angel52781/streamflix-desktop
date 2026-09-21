@@ -23,7 +23,8 @@ The current stable release is **1.3.8**, adding the approved Streamflix visual i
 
 - Java 17-compatible JVM application with Swing + FlatLaf
 - Streamflix visual identity with a native Windows app icon, branded window surfaces and a coherent DPI-independent vector control icon system
-- Cinematic desktop navigation with Home, Movies, Series, Live TV and Mi lista
+- Cinematic desktop navigation with Home, Movies, Series, Live TV, Sports and Mi lista
+- Dedicated Sports hub with live/today/upcoming event sections and multi-sport filters
 - Home discovery rails for Horror, Thriller, Drama and Comedy
 - Streaming-style rail navigation with visible previous/next controls and contextual horizontal wheel zones
 - "Ver más" actions route Home shelves into filtered Movie/Series catalogs
@@ -83,6 +84,18 @@ Live TV:
 - Pluto TV ES
 - Pluto TV US
 
+Sports data and playback:
+
+- Free-only aggregation: TheSportsDB v1 public access plus Powered by [SportScore](https://sportscore.com/); no paid sports API is required
+- TheSportsDB queries are partitioned by sport and deduplicated to improve free coverage without exceeding its documented free request cadence
+- Broadcaster metadata preserves country/region and Streamflix prioritizes local/LatAm/international options before unrelated regions
+- All reported broadcasters are resolved against the registered M3U providers with tolerant channel-name matching and quality-aware ranking
+- Candidate streams receive a lightweight health check before automatic playback; startup and mid-stream failure can fall back to another signal
+- Sports refresh automatically while the Sports section is open, and live events can also appear on Home
+- Teams and competitions can be followed locally in `sports-favorites.json`
+- `STREAMFLIX_SPORTS_COUNTRY` can override the OS country used for sports broadcaster prioritization
+- Development-only sports fallback diagnostics can be enabled with `-Dstreamflix.dev=true`; Settings then exposes a button that simulates a live signal failure
+
 Third-party providers can change or disappear without notice. A provider is not considered permanently healthy merely because it worked in a previous release.
 
 ## TMDb configuration
@@ -123,6 +136,16 @@ Output:
 ### Build JAR only
 
     .\\build.ps1 -JarOnly
+
+### Run development diagnostics
+
+Build the JAR, then launch Streamflix with the development-only Diagnostics tab enabled:
+
+    .\\build.ps1 -JarOnly
+    java -Dstreamflix.dev=true -jar .\\build\\streamflix-desktop.jar
+
+Open `Configuración -> Diagnóstico` while a sports event is playing and use
+`Simular caída de señal deportiva` to verify automatic signal fallback.
 
 ### Create Windows installers + portable release
 
@@ -193,6 +216,7 @@ Additional opt-in live gates validate real third-party/network behavior and are 
 - The portable updater requires a normal writable portable installation. A real public 1.3.6 → 1.3.7 update was validated end to end with SHA-256 verification, replacement, relaunch and no rollback/error log.
 - First playback setup requires network access to the pinned upstream mpv GitHub release; once provisioned, the runtime is reused from `%LOCALAPPDATA%`.
 - DRM/paywall bypass is intentionally out of scope.
+- Sports availability remains best-effort: free public schedules and third-party IPTV streams can be incomplete, geo-restricted, stale or unavailable, and Streamflix does not bypass DRM or subscription access.
 
 ## Upstream and license
 

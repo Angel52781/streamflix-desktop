@@ -627,6 +627,7 @@ final class TitleDetailView extends JPanel {
 
     private EmbeddedPlayerWindow configuredPlayer(String mediaTitle, Models.Episode episode) {
         EmbeddedPlayerWindow player = EmbeddedPlayerWindow.open(owner, mediaTitle);
+        if (provider instanceof SportsResolvedProvider) return player;
         if (episode == null) {
             player.setProgressListener((progress, duration, finalUpdate) -> {
                 if (finalUpdate) UserData.recordHistoryFinal(provider.id(), item, progress, duration);
@@ -652,10 +653,17 @@ final class TitleDetailView extends JPanel {
                                    Models.Episode episode, double resumeAtSeconds) {
         status.setText("Buscando la mejor fuente…");
 
+        if (provider instanceof SportsResolvedProvider) {
+            resolveSportsAndPlay(servers, 0, providerItemId, mediaTitle, playbackRequest,
+                    player, episode, resumeAtSeconds);
+            return;
+        }
+
         new SwingWorker<Models.Server, Void>() {
             @Override protected Models.Server doInBackground() throws Exception {
                 Exception last = null;
-                for (Models.Server server : PlaybackServerStats.rank(servers)) {
+                List<Models.Server> playbackOrder = PlaybackServerStats.rank(servers);
+                for (Models.Server server : playbackOrder) {
                     if (!player.isDisplayable()) throw new CancellationException("Reproductor cerrado.");
                     player.setPreparing("Probando " + server.name() + "…");
                     long startedAt = System.nanoTime();
@@ -695,6 +703,65 @@ final class TitleDetailView extends JPanel {
                             ? ex.getCause() : ex;
                     if (player.isDisplayable()) {
                         player.showFailure("No se encontró una fuente compatible. Prueba otra opción.");
+                    }
+                    status.setText("No se pudo reproducir");
+                }
+            }
+        }.execute();
+    }
+
+    private void resolveSportsAndPlay(List<Models.Server> servers, int startIndex,
+                                      String providerItemId, String mediaTitle,
+                                      long playbackRequest, EmbeddedPlayerWindow player,
+                                      Models.Episode episode, double resumeAtSeconds) {
+        if (startIndex >= servers.size()) {
+            if (player.isDisplayable()) player.showFailure("No quedan señales alternativas disponibles.");
+            status.setText("No quedan señales disponibles");
+            return;
+        }
+
+        new SwingWorker<Integer, Void>() {
+            @Override protected Integer doInBackground() throws Exception {
+                Exception last = null;
+                for (int i = startIndex; i < servers.size(); i++) {
+                    Models.Server server = servers.get(i);
+                    if (!player.isDisplayable()) throw new CancellationException("Reproductor cerrado.");
+                    player.setPreparing("Probando " + server.name() + "…");
+                    long startedAt = System.nanoTime();
+                    try {
+                        Models.Video video = requirePlayable(extractors.resolve(server));
+                        player.start(video, server.name(), playbackRequest, resumeAtSeconds);
+                        PlaybackServerStats.recordSuccess(server, elapsedMillis(startedAt));
+                        final int nextIndex = i + 1;
+                        player.setPlaybackIssueListener(() -> PlaybackServerStats.recordFailure(server, 1));
+                        player.setPlaybackIssueHandler(() -> {
+                            if (nextIndex >= servers.size()) return false;
+                            SwingUtilities.invokeLater(() -> resolveSportsAndPlay(
+                                    servers, nextIndex, providerItemId, mediaTitle,
+                                    playbackRequest, player, episode, 0.0));
+                            return true;
+                        });
+                        return i;
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        throw ex;
+                    } catch (CancellationException ex) {
+                        throw ex;
+                    } catch (Exception ex) {
+                        PlaybackServerStats.recordFailure(server, elapsedMillis(startedAt));
+                        last = ex;
+                    }
+                }
+                throw new IllegalStateException("Ninguna señal deportiva pudo iniciar la reproducción.", last);
+            }
+
+            @Override protected void done() {
+                try {
+                    get();
+                    status.setText("Reproduciendo");
+                } catch (Exception ex) {
+                    if (player.isDisplayable()) {
+                        player.showFailure("No se encontró una señal deportiva compatible.");
                     }
                     status.setText("No se pudo reproducir");
                 }
@@ -882,6 +949,7 @@ final class TitleDetailView extends JPanel {
     }
 
     private void recordOpened(Models.Episode episode) {
+        if (provider instanceof SportsResolvedProvider) return;
         if (episode == null) UserData.recordHistory(provider.id(), item);
         else UserData.recordEpisodeHistory(provider.id(), item, episode, 0.0, 0.0);
         onHistoryChanged.run();

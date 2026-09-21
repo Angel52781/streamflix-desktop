@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 final class MainFrame extends JFrame {
-    enum Mode { HOME, MOVIES, SERIES, LIVE, SEARCH, FAVORITES }
+    enum Mode { HOME, MOVIES, SERIES, LIVE, SPORTS, SEARCH, FAVORITES }
 
     private final List<Provider> providers;
     private Provider provider;
@@ -23,6 +23,9 @@ final class MainFrame extends JFrame {
     private final JPanel pagingBar = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
     private final JScrollPane catalogScroll = new JScrollPane();
     private final JScrollPane homeScroll = new JScrollPane();
+    private final SportsDataProvider sportsDataProvider;
+    private final SportsPlaybackService sportsPlaybackService;
+    private final SportsHubPanel sportsHub;
 
     private final JLabel sectionTitle = Theme.heading("Inicio", 30f);
     private final JLabel sectionSubtitle = Theme.muted("Tu contenido, sin ruido");
@@ -36,6 +39,7 @@ final class MainFrame extends JFrame {
     private final JButton moviesButton = Theme.topNavButton("Películas");
     private final JButton seriesButton = Theme.topNavButton("Series");
     private final JButton liveButton = Theme.topNavButton("TV");
+    private final JButton sportsButton = Theme.topNavButton("Deportes");
     private final JButton favoritesButton = Theme.topNavButton("Mi lista");
 
     private final JButton resetButton = Theme.button("Volver al inicio");
@@ -60,6 +64,16 @@ final class MainFrame extends JFrame {
         }
         this.providers = List.copyOf(providers);
         this.provider = preferredVodProvider(true);
+        this.sportsDataProvider = new CompositeSportsProvider(
+                new TheSportsDbProvider(),
+                new SportScoreProvider());
+        SportsChannelResolver sportsChannelResolver = new SportsChannelResolver(this.providers);
+        this.sportsPlaybackService = new SportsPlaybackService(sportsChannelResolver);
+        this.sportsHub = new SportsHubPanel(
+                sportsDataProvider,
+                event -> playSportsEvent(event, false),
+                event -> playSportsEvent(event, true),
+                () -> switchMode(Mode.LIVE));
         this.searchDebounce = new Timer(450, e -> runSearch(false));
         this.searchDebounce.setRepeats(false);
 
@@ -94,7 +108,10 @@ final class MainFrame extends JFrame {
     }
 
     @Override public void dispose() {
-        try { MpvPlayer.shutdown(); }
+        try {
+            sportsHub.deactivate();
+            MpvPlayer.shutdown();
+        }
         finally { super.dispose(); }
     }
 
@@ -103,6 +120,7 @@ final class MainFrame extends JFrame {
         moviesButton.addActionListener(e -> openCatalog(Mode.MOVIES, null, "Popular"));
         seriesButton.addActionListener(e -> openCatalog(Mode.SERIES, null, "Popular"));
         liveButton.addActionListener(e -> switchMode(Mode.LIVE));
+        sportsButton.addActionListener(e -> switchMode(Mode.SPORTS));
         favoritesButton.addActionListener(e -> switchMode(Mode.FAVORITES));
     }
 
@@ -170,7 +188,7 @@ final class MainFrame extends JFrame {
         });
         left.add(logo);
 
-        for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton, favoritesButton)) {
+        for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton, sportsButton, favoritesButton)) {
             left.add(button);
         }
         top.add(left, BorderLayout.WEST);
@@ -193,6 +211,7 @@ final class MainFrame extends JFrame {
                     searchDebounce.restart();
                 } else {
                     searchDebounce.stop();
+                    if (mode == Mode.SPORTS) sportsHub.search(text);
                     if (text.isEmpty() && mode == Mode.SEARCH) {
                         SwingUtilities.invokeLater(() -> {
                             if (mode == Mode.SEARCH && search.getText().trim().isEmpty()) {
@@ -310,12 +329,14 @@ final class MainFrame extends JFrame {
         detailHost.setBackground(Theme.BG);
         contentStack.add(homeScroll, Mode.HOME.name());
         contentStack.add(catalogScroll, "CATALOG");
+        contentStack.add(sportsHub, Mode.SPORTS.name());
         contentStack.add(detailHost, "DETAIL");
         return contentStack;
     }
 
     private void switchMode(Mode newMode) {
         if (newMode == mode && newMode != Mode.HOME) return;
+        if (mode == Mode.SPORTS && newMode != Mode.SPORTS) sportsHub.deactivate();
         if (activeWorker != null && !activeWorker.isDone()) activeWorker.cancel(true);
         searchDebounce.stop();
 
@@ -339,7 +360,11 @@ final class MainFrame extends JFrame {
         updateHeader();
 
         if (newMode == Mode.HOME) loadHome();
-        else loadPage(false);
+        else if (newMode == Mode.SPORTS) {
+            ((CardLayout) contentStack.getLayout()).show(contentStack, Mode.SPORTS.name());
+            sportsHub.search("");
+            sportsHub.activate();
+        } else loadPage(false);
     }
 
     private Provider preferredVodProvider(boolean movies) {
@@ -377,6 +402,12 @@ final class MainFrame extends JFrame {
     private void runSearch(boolean explicit) {
         String q = search.getText().trim();
         if (q.isBlank()) return;
+
+        if (mode == Mode.SPORTS) {
+            sportsHub.search(q);
+            status.setText("Filtrando eventos deportivos");
+            return;
+        }
 
         boolean keepSearchFocus = search.isFocusOwner();
         boolean continuingSearch = mode == Mode.SEARCH;
@@ -466,6 +497,13 @@ final class MainFrame extends JFrame {
                         loadAsync(seriesSource, () -> seriesSource.tvShows(1), 10);
                 CompletableFuture<List<Models.ShowItem>> liveFuture =
                         loadAsync(liveSource, () -> liveSource.tvShows(1), 10);
+                CompletableFuture<SportsSnapshot> sportsFuture = CompletableFuture.supplyAsync(() -> {
+                    try { return sportsDataProvider.load(); }
+                    catch (Exception ex) {
+                        AppLog.warn("sports", "No se pudo cargar Deportes para Inicio", ex);
+                        return new SportsSnapshot(List.of(), List.of(), List.of(), true, "");
+                    }
+                });
 
                 List<CompletableFuture<HomeShelf>> shelfFutures = new ArrayList<>();
                 if (movieSource instanceof TmdbProvider tmdb && tmdbReady()) {
@@ -497,6 +535,7 @@ final class MainFrame extends JFrame {
                         moviesFuture.join(),
                         seriesFuture.join(),
                         liveFuture.join(),
+                        sportsFuture.join(),
                         discovery
                 );
             }
@@ -563,6 +602,17 @@ final class MainFrame extends JFrame {
                     shelf.subtitle(),
                     shelf.items(),
                     () -> openCatalog(shelf.mode(), shelf.genreId(), shelf.title())));
+            homeRoot.add(Box.createVerticalStrut(30));
+        }
+
+        List<SportsEvent> liveSports = data.sports().live().stream()
+                .sorted(java.util.Comparator.comparing(SportsFavorites::matches).reversed()
+                        .thenComparing(SportsEvent::startsAt,
+                                java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
+                .limit(6)
+                .toList();
+        if (!liveSports.isEmpty()) {
+            homeRoot.add(sportsHomeSection(liveSports));
             homeRoot.add(Box.createVerticalStrut(30));
         }
 
@@ -732,6 +782,57 @@ final class MainFrame extends JFrame {
         return section;
     }
 
+    private JComponent sportsHomeSection(List<SportsEvent> events) {
+        JPanel section = new JPanel(new BorderLayout(0, 12));
+        section.setOpaque(false);
+        section.setAlignmentX(Component.LEFT_ALIGNMENT);
+        section.setMaximumSize(new Dimension(Integer.MAX_VALUE, 225));
+        section.setBorder(new EmptyBorder(0, 34, 0, 34));
+
+        JPanel heading = new JPanel(new BorderLayout());
+        heading.setOpaque(false);
+        JPanel text = new JPanel();
+        text.setOpaque(false);
+        text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+        JLabel title = Theme.heading("Deportes en vivo", 21f);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel subtitle = Theme.muted("Eventos que están ocurriendo ahora");
+        subtitle.setFont(Theme.FONT.deriveFont(12f));
+        subtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+        text.add(title);
+        text.add(Box.createVerticalStrut(3));
+        text.add(subtitle);
+        heading.add(text, BorderLayout.WEST);
+
+        JButton more = Theme.button("Ver Deportes", StreamflixIcons.Glyph.MORE);
+        more.addActionListener(e -> switchMode(Mode.SPORTS));
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        actions.setOpaque(false);
+        actions.add(more);
+        heading.add(actions, BorderLayout.EAST);
+        section.add(heading, BorderLayout.NORTH);
+
+        JPanel rail = new JPanel();
+        rail.setOpaque(false);
+        rail.setLayout(new BoxLayout(rail, BoxLayout.X_AXIS));
+        rail.setBorder(new EmptyBorder(1, 1, 8, 8));
+        for (int i = 0; i < events.size(); i++) {
+            rail.add(new SportsCompactCard(events.get(i), event -> playSportsEvent(event, false)));
+            if (i < events.size() - 1) rail.add(Box.createHorizontalStrut(12));
+        }
+
+        JScrollPane scroll = new JScrollPane(rail);
+        scroll.setBorder(null);
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
+        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scroll.getHorizontalScrollBar().setUnitIncrement(34);
+        scroll.setPreferredSize(new Dimension(800, 166));
+        section.add(scroll, BorderLayout.CENTER);
+        return section;
+    }
+
     private static void installMouseWheelListenerRecursively(
             Component component, MouseWheelListener listener) {
         component.addMouseWheelListener(listener);
@@ -847,7 +948,7 @@ final class MainFrame extends JFrame {
                         yield filterSearchResults(results, requestSearchScope);
                     }
                     case FAVORITES -> UserData.getFavorites();
-                    case HOME -> List.of();
+                    case HOME, SPORTS -> List.of();
                 };
                 return requestMode == Mode.FAVORITES
                         ? items
@@ -1039,6 +1140,90 @@ final class MainFrame extends JFrame {
         openDetails(item, true);
     }
 
+    private void playSportsEvent(SportsEvent event, boolean manualChoice) {
+        if (event == null) return;
+        status.setText("Buscando señales deportivas…");
+        new SwingWorker<SportsPlaybackPlan, Void>() {
+            @Override protected SportsPlaybackPlan doInBackground() {
+                return sportsPlaybackService.resolve(event);
+            }
+
+            @Override protected void done() {
+                try {
+                    SportsPlaybackPlan plan = get();
+                    List<SportsChannelCandidate> candidates = plan.allCandidates();
+                    if (candidates.isEmpty()) {
+                        JOptionPane.showMessageDialog(MainFrame.this,
+                                "No encontramos señales compatibles para este evento en los proveedores IPTV actuales.",
+                                "Sin señal disponible", JOptionPane.INFORMATION_MESSAGE);
+                        status.setText("Sin señal disponible");
+                        return;
+                    }
+
+                    List<SportsChannelCandidate> verified = plan.verifiedCandidates();
+                    if (!manualChoice && verified.isEmpty()) {
+                        JOptionPane.showMessageDialog(MainFrame.this,
+                                "Encontramos señales candidatas, pero ninguna respondió al health check. "
+                                        + "Puedes revisarlas manualmente desde ‘Señales’.",
+                                "Señales no verificadas", JOptionPane.INFORMATION_MESSAGE);
+                        status.setText("Señales no verificadas");
+                        return;
+                    }
+
+                    List<SportsChannelCandidate> ordered = manualChoice
+                            ? chooseSportsCandidate(plan)
+                            : candidates;
+                    if (ordered.isEmpty()) {
+                        status.setText(" ");
+                        return;
+                    }
+                    openSportsPlayback(event, ordered);
+                    status.setText(" ");
+                } catch (Exception ex) {
+                    Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+                    AppLog.warn("sports", "No se pudo preparar reproducción deportiva", cause);
+                    JOptionPane.showMessageDialog(MainFrame.this,
+                            "No pudimos preparar las señales del evento. Inténtalo nuevamente.",
+                            "Error de Deportes", JOptionPane.ERROR_MESSAGE);
+                    status.setText("No se pudo preparar la señal");
+                }
+            }
+        }.execute();
+    }
+
+    private List<SportsChannelCandidate> chooseSportsCandidate(SportsPlaybackPlan plan) {
+        List<SportsChannelHealth> ranked = plan.ranked();
+        if (ranked.isEmpty()) return List.of();
+        String[] choices = ranked.stream().map(value -> {
+            SportsChannelCandidate candidate = value.candidate();
+            String health = value.healthy() ? "✓" : "?";
+            String country = candidate.broadcaster().country().isBlank()
+                    ? "" : " · " + candidate.broadcaster().country();
+            return health + " " + candidate.channel().title() + " · " + candidate.providerName()
+                    + country + " · " + value.latencyMillis() + " ms";
+        }).toArray(String[]::new);
+        Object selected = JOptionPane.showInputDialog(this,
+                "✓ = señal verificada. ? = señal no confirmada.\n"
+                        + "Si la elegida falla, Streamflix probará las siguientes automáticamente.",
+                "Señales del evento", JOptionPane.PLAIN_MESSAGE, null, choices, choices[0]);
+        if (selected == null) return List.of();
+        int selectedIndex = -1;
+        for (int i = 0; i < choices.length; i++) if (choices[i].equals(selected)) { selectedIndex = i; break; }
+        if (selectedIndex < 0) return List.of();
+
+        ArrayList<SportsChannelCandidate> ordered = new ArrayList<>();
+        ordered.add(ranked.get(selectedIndex).candidate());
+        for (int i = 0; i < ranked.size(); i++) {
+            if (i != selectedIndex) ordered.add(ranked.get(i).candidate());
+        }
+        return List.copyOf(ordered);
+    }
+
+    private void openSportsPlayback(SportsEvent event, List<SportsChannelCandidate> candidates) {
+        SportsResolvedProvider sportsProvider = new SportsResolvedProvider(event, candidates);
+        openDetails(sportsProvider, sportsProvider.item(), true);
+    }
+
     private void openDetails(Models.ShowItem item) {
         openDetails(item, false);
     }
@@ -1046,6 +1231,11 @@ final class MainFrame extends JFrame {
     private void openDetails(Models.ShowItem item, boolean autoPlay) {
         Provider itemProvider = item.sourceProviderId() == null ? null : ProviderRegistry.get(item.sourceProviderId());
         if (itemProvider == null) itemProvider = provider;
+        openDetails(itemProvider, item, autoPlay);
+    }
+
+    private void openDetails(Provider itemProvider, Models.ShowItem item, boolean autoPlay) {
+        if (itemProvider == null) throw new IllegalArgumentException("Provider requerido");
 
         // Establish the detail route before mutating the catalog header. This keeps
         // the card activation gesture independent from filter visibility updates.
@@ -1078,9 +1268,12 @@ final class MainFrame extends JFrame {
             return;
         }
 
-        ((CardLayout) contentStack.getLayout()).show(
-                contentStack,
-                mode == Mode.HOME ? Mode.HOME.name() : "CATALOG");
+        String destination = switch (mode) {
+            case HOME -> Mode.HOME.name();
+            case SPORTS -> Mode.SPORTS.name();
+            default -> "CATALOG";
+        };
+        ((CardLayout) contentStack.getLayout()).show(contentStack, destination);
     }
 
     private void rebuildGridColumns() {
@@ -1099,6 +1292,7 @@ final class MainFrame extends JFrame {
                 mode == Mode.SERIES || (searching && searchScope == Mode.SERIES));
         Theme.setNavSelected(liveButton,
                 mode == Mode.LIVE || (searching && searchScope == Mode.LIVE));
+        Theme.setNavSelected(sportsButton, mode == Mode.SPORTS);
         Theme.setNavSelected(favoritesButton, mode == Mode.FAVORITES);
         updateSearchHint();
     }
@@ -1109,6 +1303,7 @@ final class MainFrame extends JFrame {
             case MOVIES -> "Buscar películas";
             case SERIES -> "Buscar series";
             case LIVE -> "Buscar canales";
+            case SPORTS -> "Buscar equipos, ligas o deportes";
             default -> "Buscar películas y series";
         };
         search.putClientProperty("JTextField.placeholderText", label);
@@ -1189,6 +1384,7 @@ final class MainFrame extends JFrame {
             case MOVIES -> "Películas";
             case SERIES -> "Series";
             case LIVE -> "TV en vivo";
+            case SPORTS -> "Deportes";
             case SEARCH -> query.isBlank() ? "Resultados" : "Resultados para “" + query + "”";
             case FAVORITES -> "Mi lista";
         };
@@ -1199,6 +1395,7 @@ final class MainFrame extends JFrame {
             case HOME -> "Películas, series y canales en un solo lugar";
             case FAVORITES -> "Títulos que guardaste";
             case LIVE -> "Canales en directo";
+            case SPORTS -> "Partidos, carreras y eventos deportivos en vivo y próximos";
             case SEARCH -> switch (searchScope) {
                 case MOVIES -> "Películas";
                 case SERIES -> "Series";
@@ -1221,7 +1418,7 @@ final class MainFrame extends JFrame {
 
     private void setBusy(boolean busy, String text) {
         status.setText(text);
-        for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton, favoritesButton)) {
+        for (JButton button : List.of(homeButton, moviesButton, seriesButton, liveButton, sportsButton, favoritesButton)) {
             button.setEnabled(!busy);
         }
         // Search is asynchronous: disabling this field steals keyboard focus
@@ -1313,6 +1510,7 @@ final class MainFrame extends JFrame {
             List<Models.ShowItem> movies,
             List<Models.ShowItem> series,
             List<Models.ShowItem> live,
+            SportsSnapshot sports,
             List<HomeShelf> discovery
     ) {}
 
